@@ -1,0 +1,134 @@
+[
+  {
+    "apps": {
+      "hooks": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/settings": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "hooks:/ConfigMap:<NS>/settings",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "737763e7fa149f0c28ca8a876ee7d54358a6fbac",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (no more tasks)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "737763e7fa149f0c28ca8a876ee7d54358a6fbac",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [
+                {
+                  "group": "batch",
+                  "hookPhase": "Succeeded",
+                  "hookType": "PostSync",
+                  "images": [
+                    "busybox:1.36"
+                  ],
+                  "kind": "Job",
+                  "message": "Reached expected number of succeeded pods",
+                  "name": "postsync",
+                  "namespace": "<NS>",
+                  "status": "Synced",
+                  "syncPhase": "PostSync",
+                  "version": "v1"
+                },
+                {
+                  "group": "batch",
+                  "hookPhase": "Succeeded",
+                  "hookType": "PreSync",
+                  "images": [
+                    "busybox:1.36"
+                  ],
+                  "kind": "Job",
+                  "message": "Reached expected number of succeeded pods",
+                  "name": "presync",
+                  "namespace": "<NS>",
+                  "status": "Synced",
+                  "syncPhase": "PreSync",
+                  "version": "v1"
+                }
+              ],
+              "revision": "737763e7fa149f0c28ca8a876ee7d54358a6fbac",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "settings",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "737763e7fa149f0c28ca8a876ee7d54358a6fbac",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

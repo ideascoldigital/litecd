@@ -1,0 +1,134 @@
+[
+  {
+    "apps": {
+      "directory-plain": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/settings": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-plain:/ConfigMap:<NS>/settings",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "Service/<NS>/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-plain:/Service:<NS>/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "apps/Deployment/<NS>/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-plain:apps/Deployment:<NS>/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "54227dfefaca27d979cb41eaa7cb93210b8ee578",
+              "source": {
+                "path": "manifests",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "54227dfefaca27d979cb41eaa7cb93210b8ee578",
+                "source": {
+                  "path": "manifests",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "54227dfefaca27d979cb41eaa7cb93210b8ee578",
+              "source": {
+                "path": "manifests",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "settings",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "Service",
+              "name": "web",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "group": "apps",
+              "kind": "Deployment",
+              "name": "web",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {
+            "images": [
+              "registry.k8s.io/pause:3.10"
+            ]
+          },
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "manifests",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "54227dfefaca27d979cb41eaa7cb93210b8ee578",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

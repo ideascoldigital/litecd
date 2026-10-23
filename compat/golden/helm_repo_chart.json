@@ -1,0 +1,133 @@
+[
+  {
+    "apps": {
+      "helm-repo-chart": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/helm-repo-chart-config": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "helm-repo-chart:/ConfigMap:<NS>/helm-repo-chart-config",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "apps/Deployment/<NS>/helm-repo-chart-web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "helm-repo-chart:apps/Deployment:<NS>/helm-repo-chart-web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "1.2.3",
+              "source": {
+                "chart": "repochart",
+                "helm": {
+                  "values": "message: from-values-string\n"
+                },
+                "repoURL": "http://git.litecd-compat.svc.cluster.local/charts",
+                "targetRevision": "1.2.3"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "1.2.3",
+                "source": {
+                  "chart": "repochart",
+                  "helm": {
+                    "values": "message: from-values-string\n"
+                  },
+                  "repoURL": "http://git.litecd-compat.svc.cluster.local/charts",
+                  "targetRevision": "1.2.3"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1.2.3",
+              "source": {
+                "chart": "repochart",
+                "helm": {
+                  "values": "message: from-values-string\n"
+                },
+                "repoURL": "http://git.litecd-compat.svc.cluster.local/charts",
+                "targetRevision": "1.2.3"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "helm-repo-chart-config",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "group": "apps",
+              "kind": "Deployment",
+              "name": "helm-repo-chart-web",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Helm",
+          "summary": {
+            "images": [
+              "registry.k8s.io/pause:3.10"
+            ]
+          },
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "chart": "repochart",
+                "helm": {
+                  "values": "message: from-values-string\n"
+                },
+                "repoURL": "http://git.litecd-compat.svc.cluster.local/charts",
+                "targetRevision": "1.2.3"
+              }
+            },
+            "revision": "1.2.3",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

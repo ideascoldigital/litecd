@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helm-repo-chart
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <CHART_REPO>
+    chart: repochart
+    targetRevision: 1.2.3
+    helm:
+      values: |
+        message: from-values-string
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

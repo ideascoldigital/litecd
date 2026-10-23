@@ -1,0 +1,149 @@
+[
+  {
+    "apps": {
+      "directory-recurse": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/from-json": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-recurse:/ConfigMap:<NS>/from-json",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/nested": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-recurse:/ConfigMap:<NS>/nested",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/top": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "directory-recurse:/ConfigMap:<NS>/top",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "5383fcd406dbc4e0b564bc222a089272d2dcb849",
+              "source": {
+                "directory": {
+                  "exclude": "skip/*",
+                  "include": "{*.yaml,*.json}",
+                  "recurse": true
+                },
+                "path": "apps",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "5383fcd406dbc4e0b564bc222a089272d2dcb849",
+                "source": {
+                  "directory": {
+                    "exclude": "skip/*",
+                    "include": "{*.yaml,*.json}",
+                    "recurse": true
+                  },
+                  "path": "apps",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "5383fcd406dbc4e0b564bc222a089272d2dcb849",
+              "source": {
+                "directory": {
+                  "exclude": "skip/*",
+                  "include": "{*.yaml,*.json}",
+                  "recurse": true
+                },
+                "path": "apps",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "from-json",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "nested",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "top",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "directory": {
+                  "exclude": "skip/*",
+                  "include": "{*.yaml,*.json}",
+                  "recurse": true
+                },
+                "path": "apps",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "5383fcd406dbc4e0b564bc222a089272d2dcb849",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

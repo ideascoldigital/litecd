@@ -1,0 +1,49 @@
+# The corpus's git server: http://git.litecd-compat.svc.cluster.local/git/<case>.git
+# and the Helm repository http://git.litecd-compat.svc.cluster.local/charts/.
+# setup.sh creates the ConfigMap git-server from server.py.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: litecd-compat
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  namespace: litecd-compat
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: git}
+  template:
+    metadata:
+      labels: {app: git}
+    spec:
+      containers:
+        - name: git
+          image: python:3.13-alpine
+          command: [sh, -c, "apk add --no-cache git git-daemon >/dev/null && exec python3 -u /opt/server/server.py"]
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: server, mountPath: /opt/server}
+            - {name: data, mountPath: /srv}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+      volumes:
+        - name: server
+          configMap: {name: git-server}
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+  namespace: litecd-compat
+spec:
+  selector: {app: git}
+  ports: [{port: 80, targetPort: 8080}]

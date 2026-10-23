@@ -1,0 +1,9 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: compat-restricted
+spec:
+  sourceRepos: [https://git.example.com/allowed.git]
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: <NS>}
+  clusterResourceWhitelist: []

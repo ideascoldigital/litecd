@@ -1,0 +1,116 @@
+[
+  {
+    "apps": {
+      "no-prune": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/keep": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "no-prune:/ConfigMap:<NS>/keep",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/removed": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "no-prune:/ConfigMap:<NS>/removed",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "b2fd796cf6c0c65f9057d41a4b48ec2cc9d0c2d3",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "revision": "b2fd796cf6c0c65f9057d41a4b48ec2cc9d0c2d3",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "b2fd796cf6c0c65f9057d41a4b48ec2cc9d0c2d3",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "keep",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "removed",
+              "namespace": "<NS>",
+              "requiresPruning": true,
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "9c66923f220bb651ce597749999c6ae24ff8b906",
+            "status": "OutOfSync"
+          }
+        }
+      }
+    },
+    "label": "out-of-sync"
+  }
+]

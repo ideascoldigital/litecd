@@ -1,0 +1,277 @@
+[
+  {
+    "apps": {
+      "prune-selfheal": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/keep": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-selfheal:/ConfigMap:<NS>/keep",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/removed": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-selfheal:/ConfigMap:<NS>/removed",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "apps/Deployment/<NS>/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-selfheal:apps/Deployment:<NS>/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "c5b3d35c52494d2a302bbb3b2551fc23c539e1d5",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "c5b3d35c52494d2a302bbb3b2551fc23c539e1d5",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "c5b3d35c52494d2a302bbb3b2551fc23c539e1d5",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "keep",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "removed",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "group": "apps",
+              "kind": "Deployment",
+              "name": "web",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {
+            "images": [
+              "registry.k8s.io/pause:3.10"
+            ]
+          },
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "c5b3d35c52494d2a302bbb3b2551fc23c539e1d5",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  },
+  {
+    "apps": {
+      "prune-selfheal": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/keep": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-selfheal:/ConfigMap:<NS>/keep",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "apps/Deployment/<NS>/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-selfheal:apps/Deployment:<NS>/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "c5b3d35c52494d2a302bbb3b2551fc23c539e1d5",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            {
+              "id": 1,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "86521f0063aebadbb3050e180daa7eb9ea9f7762",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "86521f0063aebadbb3050e180daa7eb9ea9f7762",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [
+                {
+                  "group": "",
+                  "hookPhase": "Succeeded",
+                  "kind": "ConfigMap",
+                  "message": "pruned",
+                  "name": "removed",
+                  "namespace": "<NS>",
+                  "status": "Pruned",
+                  "syncPhase": "Sync",
+                  "version": "v1"
+                }
+              ],
+              "revision": "86521f0063aebadbb3050e180daa7eb9ea9f7762",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "keep",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "group": "apps",
+              "kind": "Deployment",
+              "name": "web",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {
+            "images": [
+              "registry.k8s.io/pause:3.10"
+            ]
+          },
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "86521f0063aebadbb3050e180daa7eb9ea9f7762",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "pruned"
+  }
+]

@@ -1,0 +1,8 @@
+# A ConfigMap key with a space: the API server rejects it. (A Deployment
+# without a selector would be the obvious one, but litek8s 0.2.8 accepts it.)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: invalid
+data:
+  "bad key": value

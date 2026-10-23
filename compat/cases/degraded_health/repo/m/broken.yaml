@@ -1,0 +1,16 @@
+# A Job that fails: Degraded once it reaches its backoff limit. (A Deployment
+# past progressDeadlineSeconds would be the classic case, but litek8s 0.2.8
+# never reports ProgressDeadlineExceeded.)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: broken
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "echo failing; exit 1"]

@@ -110,14 +110,13 @@ pub fn check_text(file: &Path, text: &str) -> Result<Vec<Object>> {
             continue;
         };
         let api = v["apiVersion"].as_str().unwrap_or_default();
-        if !api.starts_with("argoproj.io/") {
-            continue;
-        }
         let kind = v["kind"].as_str().unwrap_or_default();
-        let features = match kind {
-            "Application" => application(&v),
-            "AppProject" => project(&v),
-            "ApplicationSet" => application_set(&v),
+        let features = match (api, kind) {
+            (a, "Application") if a.starts_with("argoproj.io/") => application(&v),
+            (a, "AppProject") if a.starts_with("argoproj.io/") => project(&v),
+            (a, "ApplicationSet") if a.starts_with("argoproj.io/") => application_set(&v),
+            // A kustomize patch of argocd-cm may have no apiVersion.
+            (_, "ConfigMap") if v["metadata"]["name"] == "argocd-cm" => argocd_cm(&v),
             _ => continue,
         };
         out.push(Object {
@@ -383,6 +382,54 @@ fn generators(gens: &[Value], out: &mut Vec<Feature>) {
     }
 }
 
+/// The settings in argocd-cm that change how litecd must behave.
+fn argocd_cm(v: &Value) -> Vec<Feature> {
+    let mut out = Vec::new();
+    let Some(data) = v["data"].as_object() else {
+        return out;
+    };
+    for k in data.keys() {
+        let (name, support) = if let Some(kind) = k.strip_prefix("resource.customizations.health.")
+        {
+            (format!("Lua health check for {kind}"), Support::Phase1)
+        } else if k.starts_with("resource.customizations.ignoreDifferences.") {
+            (
+                format!("{k} (ignoreDifferences for every app)"),
+                Support::Phase2,
+            )
+        } else if k.starts_with("resource.customizations.actions.") {
+            (format!("{k} (resource actions)"), Support::NotPlanned)
+        } else if k == "resource.customizations" || k.starts_with("resource.customizations.") {
+            (k.clone(), Support::Phase2)
+        } else {
+            match k.as_str() {
+                "timeout.reconciliation"
+                | "application.resourceTrackingMethod"
+                | "application.instanceLabelKey"
+                | "resource.exclusions"
+                | "resource.inclusions" => (k.clone(), Support::Phase1),
+                "kustomize.buildOptions" | "helm.valuesFileSchemes" | "resource.compareoptions" => {
+                    (k.clone(), Support::Phase2)
+                }
+                "url"
+                | "admin.enabled"
+                | "users.anonymous.enabled"
+                | "statusbadge.enabled"
+                | "exec.enabled" => continue,
+                k if k.starts_with("dex.")
+                    || k.starts_with("oidc.")
+                    || k.starts_with("accounts.") =>
+                {
+                    continue;
+                }
+                _ => (k.to_string(), Support::Unknown),
+            }
+        };
+        push(&mut out, name, support);
+    }
+    out
+}
+
 /// The text report: one block per object, then a summary.
 pub fn report(objects: &[Object]) -> String {
     let mut s = String::new();
@@ -517,6 +564,28 @@ spec:
         assert_eq!(support(&o, "generator git"), Support::Phase3);
         assert_eq!(support(&o, "generator pullRequest"), Support::NotPlanned);
         assert_eq!(o.needs(), Support::NotPlanned);
+    }
+
+    #[test]
+    fn argocd_cm_lua_health_is_phase1() {
+        let o = one(r#"
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: argocd-cm}
+data:
+  url: https://argocd.example.com
+  resource.customizations.health.argoproj.io_Application: |
+    hs = {}
+    return hs
+  resource.customizations.actions.apps_Deployment: "..."
+"#);
+        assert_eq!(o.kind, "ConfigMap");
+        assert_eq!(
+            support(&o, "Lua health check for argoproj.io_Application"),
+            Support::Phase1
+        );
+        assert_eq!(o.needs(), Support::NotPlanned);
+        assert!(o.features.iter().all(|f| f.name != "url"), "{o:?}");
     }
 
     #[test]

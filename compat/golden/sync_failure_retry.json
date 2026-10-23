@@ -1,0 +1,123 @@
+[
+  {
+    "apps": {
+      "sync-failure-retry": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/fine": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "sync-failure-retry:/ConfigMap:<NS>/fine",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/invalid": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "conditions": [
+            {
+              "message": "Failed last sync attempt to [c26bbb14d55571d51e899f39e87b8bfc5bf238bb]: one or more synchronization tasks completed unsuccessfully, reason: configmaps \"invalid\" is invalid: data[bad key]: Invalid value: \"bad key\": a valid config key must consist of alphanumeric characters, '-', '_' or '.' (e.g. 'key.name',  or 'KEY_NAME',  or 'key-name', regex used for validation is '[-._a-zA-Z0-9]+') (retried 2 times).",
+              "type": "SyncError"
+            }
+          ],
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "operationState": {
+            "message": "one or more synchronization tasks completed unsuccessfully, reason: configmaps \"invalid\" is invalid: data[bad key]: Invalid value: \"bad key\": a valid config key must consist of alphanumeric characters, '-', '_' or '.' (e.g. 'key.name',  or 'KEY_NAME',  or 'key-name', regex used for validation is '[-._a-zA-Z0-9]+') (retried 2 times).",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "backoff": {
+                  "duration": "1s",
+                  "factor": 2,
+                  "maxDuration": "10s"
+                },
+                "limit": 2
+              },
+              "sync": {
+                "prune": true,
+                "revision": "c26bbb14d55571d51e899f39e87b8bfc5bf238bb",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Failed",
+            "retryCount": 2,
+            "syncResult": {
+              "resources": [
+                {
+                  "group": "",
+                  "hookPhase": "Failed",
+                  "kind": "ConfigMap",
+                  "message": "configmaps \"invalid\" is invalid: data[bad key]: Invalid value: \"bad key\": a valid config key must consist of alphanumeric characters, '-', '_' or '.' (e.g. 'key.name',  or 'KEY_NAME',  or 'key-name', regex used for validation is '[-._a-zA-Z0-9]+')",
+                  "name": "invalid",
+                  "namespace": "<NS>",
+                  "status": "SyncFailed",
+                  "syncPhase": "Sync",
+                  "version": "v1"
+                }
+              ],
+              "revision": "c26bbb14d55571d51e899f39e87b8bfc5bf238bb",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "fine",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "invalid",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "c26bbb14d55571d51e899f39e87b8bfc5bf238bb",
+            "status": "OutOfSync"
+          }
+        }
+      }
+    },
+    "label": "failed"
+  }
+]

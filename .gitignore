@@ -3,3 +3,6 @@ target/
 
 # macOS
 .DS_Store
+
+# Corpus runs
+compat/results/

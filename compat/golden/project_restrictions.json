@@ -1,0 +1,29 @@
+[
+  {
+    "apps": {
+      "project-restrictions": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {},
+        "operation": null,
+        "status": {
+          "conditions": [
+            {
+              "message": "application repo <REPO_URL> is not permitted in project 'compat-restricted'",
+              "type": "InvalidSpecError"
+            }
+          ],
+          "health": {
+            "status": "Unknown"
+          },
+          "sync": {
+            "status": "Unknown"
+          }
+        }
+      }
+    },
+    "label": "rejected"
+  }
+]

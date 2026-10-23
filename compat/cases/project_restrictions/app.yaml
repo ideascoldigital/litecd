@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-restrictions
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: compat-restricted
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

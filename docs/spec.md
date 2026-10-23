@@ -77,11 +77,12 @@ One binary, one Deployment (one replica; a Lease when there are more).
 1. **MVP:** Application and AppProject; directory, Helm and Kustomize
    sources (`examples/platform` has Kustomize directories Argo CD detects by
    their `kustomization.yaml`); sync,
-   prune, self-heal, waves, retry, `.operation`, refresh; built-in health;
-   status as Argo CD writes it. Done when `examples/platform` comes up with
+   prune, self-heal, waves, retry, `.operation`, refresh; built-in health and
+   Lua health checks from `argocd-cm` (`examples/platform` makes its app of
+   apps wait on child Applications with one); status as Argo CD writes it. Done when `examples/platform` comes up with
    litecd in place of Argo CD, all apps Synced + Healthy, and litecd idles
    under 40 MiB.
-2. **Coverage:** hooks, Kustomize options beyond the defaults, jsonnet, multiple sources, Lua health,
+2. **Coverage:** hooks, Kustomize options beyond the defaults, jsonnet, multiple sources, Argo CD's bundled Lua health library,
    `ignoreDifferences`, the remaining sync options, error conditions as Argo
    CD reports them.
 3. **ApplicationSet** (list, git directories/files, clusters, matrix, merge;
