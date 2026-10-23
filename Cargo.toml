@@ -1,0 +1,18 @@
+[package]
+name = "litecd"
+version = "0.1.0"
+edition = "2024"
+description = "GitOps continuous delivery in one small Rust binary that reads Argo CD's Application, AppProject and ApplicationSet manifests unchanged"
+license = "Apache-2.0"
+repository = "https://github.com/jairoFernandez/litecd"
+readme = "README.md"
+keywords = ["kubernetes", "gitops", "continuous-delivery", "argocd-compatible"]
+categories = ["command-line-utilities"]
+rust-version = "1.90"
+
+[dependencies]
+anyhow = "1.0.97"
+clap = { version = "4.5.32", features = ["derive", "env"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+serde_yaml = "0.9.34"
