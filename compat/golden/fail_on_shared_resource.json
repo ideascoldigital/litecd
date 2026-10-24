@@ -1,0 +1,198 @@
+[
+  {
+    "apps": {
+      "shared-first": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/shared": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "shared-first:/ConfigMap:<NS>/shared",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "shared",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+            "status": "Synced"
+          }
+        }
+      },
+      "shared-second": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/shared": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "shared-first:/ConfigMap:<NS>/shared",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "conditions": [
+            {
+              "message": "ConfigMap/shared is part of applications argocd/shared-second and shared-first",
+              "type": "SharedResourceWarning"
+            },
+            {
+              "message": "Failed last sync attempt to [91e2e7476beca76ebd0ddaff148b5bf7085e7848]: Shared resource found: ConfigMap/shared is part of applications argocd/shared-second and shared-first (retried 1 times).",
+              "type": "SyncError"
+            }
+          ],
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "operationState": {
+            "message": "Shared resource found: ConfigMap/shared is part of applications argocd/shared-second and shared-first (retried 1 times).",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "backoff": {
+                  "duration": "1s",
+                  "factor": 2,
+                  "maxDuration": "5s"
+                },
+                "limit": 1
+              },
+              "sync": {
+                "prune": true,
+                "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+                "source": {
+                  "path": "m",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "FailOnSharedResource=true"
+                ]
+              }
+            },
+            "phase": "Failed",
+            "retryCount": 1,
+            "syncResult": {
+              "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "shared",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "91e2e7476beca76ebd0ddaff148b5bf7085e7848",
+            "status": "OutOfSync"
+          }
+        }
+      }
+    },
+    "label": "failed"
+  }
+]

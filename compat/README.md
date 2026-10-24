@@ -88,10 +88,10 @@ so litecd is compared on the same kind of cluster.
 
 ## litecd
 
-2026-10-24, litecd with phase 1 and most of phase 2 on a fresh cluster
-(Argo CD's CRDs only): 24/24 cases equal their golden files, twice in a
-row. The five newest cases' golden files were written from Argo CD the
-same day and reproduced twice before litecd ran them.
+2026-10-24, litecd with phases 1 and 2 on a fresh cluster (Argo CD's CRDs
+only): 26/26 cases equal their golden files, twice in a row. Every new
+case's golden file was written from Argo CD and reproduced twice before
+litecd ran it.
 
 ```bash
 deploy/build.sh && LITECD_MANIFEST=deploy/install compat/run.sh --target litecd

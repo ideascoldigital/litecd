@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jsonnet
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: j
+    directory:
+      jsonnet:
+        extVars: [{name: prefix, value: generated}]
+        tlas: [{name: count, value: "3", code: true}]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

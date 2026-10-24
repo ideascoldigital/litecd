@@ -208,6 +208,17 @@ pub async fn run(
     let mut results = Vec::new();
     let dest_ns = app::destination_namespace(app_obj);
 
+    // FailOnSharedResource=true: nothing is applied when another app
+    // manages one of these resources.
+    if req.has("FailOnSharedResource=true")
+        && let Some(m) = cmp.resources.iter().find_map(|r| r.shared_message(app_obj))
+    {
+        return Err(Failed {
+            message: format!("Shared resource found: {m}"),
+            results,
+        });
+    }
+
     // CreateNamespace=true: the destination namespace first.
     if req.has("CreateNamespace=true") && !dest_ns.is_empty() {
         let ns_kind = ctx.kube.known("v1", "Namespace").await;

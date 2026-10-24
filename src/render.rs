@@ -116,7 +116,7 @@ fn glob(pattern: &str) -> Result<globset::GlobMatcher> {
 
 /// A plain directory: YAML and JSON files, recursively when asked, with
 /// include and exclude globs matched against the path below the source path.
-pub fn directory(dir: &Path, directory: &Value) -> Result<Vec<Value>> {
+pub fn directory(dir: &Path, directory: &Value, repo_root: &Path) -> Result<Vec<Value>> {
     let recurse = directory["recurse"].as_bool().unwrap_or(false);
     let include = directory["include"]
         .as_str()
@@ -143,7 +143,12 @@ pub fn directory(dir: &Path, directory: &Value) -> Result<Vec<Value>> {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        if !(name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".json")) {
+        let jsonnet = name.ends_with(".jsonnet");
+        if !(name.ends_with(".yaml")
+            || name.ends_with(".yml")
+            || name.ends_with(".json")
+            || jsonnet)
+        {
             continue;
         }
         if exclude.as_ref().is_some_and(|g| g.is_match(&rel)) {
@@ -152,10 +157,62 @@ pub fn directory(dir: &Path, directory: &Value) -> Result<Vec<Value>> {
         if include.as_ref().is_some_and(|g| !g.is_match(&rel)) {
             continue;
         }
-        let text = std::fs::read_to_string(&f).with_context(|| format!("reading {rel}"))?;
+        let text = if jsonnet {
+            evaluate_jsonnet(&f, &directory["jsonnet"], repo_root)
+                .with_context(|| format!("in {rel}"))?
+        } else {
+            std::fs::read_to_string(&f).with_context(|| format!("reading {rel}"))?
+        };
         out.extend(parse_manifests(&text).with_context(|| format!("in {rel}"))?);
     }
     Ok(out)
+}
+
+/// The command line `jsonnet` gets for a directory source's jsonnet
+/// options: extVars and tlas (as strings, or as code), libs relative to the
+/// repository.
+pub fn jsonnet_args(opts: &Value, repo_root: &Path) -> Vec<String> {
+    let mut args = Vec::new();
+    for (list, flag) in [("extVars", "ext"), ("tlas", "tla")] {
+        for v in opts[list].as_array().into_iter().flatten() {
+            let name = v["name"].as_str().unwrap_or_default();
+            let value = v["value"].as_str().unwrap_or_default();
+            let kind = if v["code"].as_bool() == Some(true) {
+                "code"
+            } else {
+                "str"
+            };
+            args.push(format!("--{flag}-{kind}"));
+            args.push(format!("{name}={value}"));
+        }
+    }
+    for lib in opts["libs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        args.push("-J".into());
+        args.push(
+            repo_root
+                .join(lib.trim_start_matches('/'))
+                .display()
+                .to_string(),
+        );
+    }
+    args
+}
+
+fn evaluate_jsonnet(file: &Path, opts: &Value, repo_root: &Path) -> Result<String> {
+    let out = std::process::Command::new("jsonnet")
+        .args(jsonnet_args(opts, repo_root))
+        .arg(file)
+        .output()
+        .context("running jsonnet")?;
+    if !out.status.success() {
+        bail!("jsonnet: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
 fn walk(dir: &Path, recurse: bool, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -510,10 +567,14 @@ mod tests {
         )
         .unwrap();
         std::fs::write(tmp.join("README.md"), "not yaml").unwrap();
-        assert_eq!(names(&directory(&tmp, &Value::Null).unwrap()), ["top"]);
+        assert_eq!(
+            names(&directory(&tmp, &Value::Null, &tmp).unwrap()),
+            ["top"]
+        );
         let all = directory(
             &tmp,
             &json!({"recurse": true, "include": "{*.yaml,*.json}", "exclude": "skip/*"}),
+            &tmp,
         )
         .unwrap();
         assert_eq!(names(&all), ["nested", "from-json", "top"]);
@@ -528,6 +589,22 @@ mod tests {
         .unwrap();
         assert_eq!(names(&objs), ["a", "b"]);
         assert!(parse_manifests("kind: ConfigMap\n").is_err());
+    }
+
+    #[test]
+    fn jsonnet_command_line() {
+        let opts = json!({"extVars": [{"name": "prefix", "value": "generated"}], "tlas": [{"name": "count", "value": "3", "code": true}], "libs": ["vendor"]});
+        assert_eq!(
+            jsonnet_args(&opts, Path::new("/repo")),
+            [
+                "--ext-str",
+                "prefix=generated",
+                "--tla-code",
+                "count=3",
+                "-J",
+                "/repo/vendor"
+            ]
+        );
     }
 
     #[test]

@@ -325,6 +325,34 @@ fn status_from(
                 s.insert("summary".into(), Value::Object(summary));
             }
             remove_conditions(&mut s, &["ComparisonError", "InvalidSpecError"]);
+            // One SharedResourceWarning per shared resource, kept in place.
+            let shared: Vec<String> = c
+                .resources
+                .iter()
+                .filter_map(|r| r.shared_message(app))
+                .collect();
+            let mut conds = s
+                .get("conditions")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            conds.retain(|x| {
+                x["type"] != "SharedResourceWarning"
+                    || shared.iter().any(|m| x["message"] == m.as_str())
+            });
+            for m in &shared {
+                if !conds
+                    .iter()
+                    .any(|x| x["type"] == "SharedResourceWarning" && x["message"] == m.as_str())
+                {
+                    conds.push(json!({"type": "SharedResourceWarning", "message": m, "lastTransitionTime": app::now()}));
+                }
+            }
+            if conds.is_empty() {
+                s.remove("conditions");
+            } else {
+                s.insert("conditions".into(), Value::Array(conds));
+            }
         }
         Err(CompareError::InvalidSpec(msg)) => {
             s.retain(|k, _| {
@@ -713,7 +741,11 @@ impl AppTask {
             "operation": op, "phase": phase, "message": message, "startedAt": started, "finishedAt": app::now(),
         });
         let mut result = result_fields(&src, &revision);
-        result["resources"] = json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        // Argo CD leaves the list out when no task ran.
+        if !results.is_empty() {
+            result["resources"] =
+                json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        }
         state["syncResult"] = result;
         if retries > 0 {
             state["retryCount"] = json!(retries);
@@ -864,7 +896,11 @@ impl sync::Progress for OpProgress<'_> {
         let (cmp, _) = t.compare(&app, false, false).await;
         let mut status = status_from(t.ctx(), &app, &cmp, false);
         let mut result = self.result_fields.clone();
-        result["resources"] = json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        // Argo CD leaves the list out when no task ran.
+        if !results.is_empty() {
+            result["resources"] =
+                json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        }
         let mut state = json!({"operation": self.op, "phase": "Running", "startedAt": self.started, "message": message, "syncResult": result});
         if self.retries > 0 {
             state["retryCount"] = json!(self.retries);

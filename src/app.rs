@@ -272,9 +272,22 @@ pub struct ResourceState {
     pub wave: i64,
     pub live: Option<Value>,
     pub health: Option<Health>,
+    /// The other app whose tracking metadata the live object carries.
+    pub shared_with: Option<String>,
 }
 
 impl ResourceState {
+    /// Argo CD's words for a resource another app manages too.
+    pub fn shared_message(&self, app: &Value) -> Option<String> {
+        let other = self.shared_with.as_ref()?;
+        let ns = app["metadata"]["namespace"].as_str().unwrap_or_default();
+        let name = app["metadata"]["name"].as_str().unwrap_or_default();
+        Some(format!(
+            "{}/{} is part of applications {ns}/{name} and {other}",
+            self.key.kind, self.key.name
+        ))
+    }
+
     pub fn to_json(&self) -> Value {
         let mut r = serde_json::Map::new();
         if !self.key.group.is_empty() {
@@ -595,7 +608,7 @@ async fn render_one(
     }
     let ty = render::source_type(source, Some(&dir));
     let objects = match ty {
-        SourceType::Directory => render::directory(&dir, &source["directory"])?,
+        SourceType::Directory => render::directory(&dir, &source["directory"], &tree)?,
         SourceType::Helm => render::helm_template(&dir, source, &cx, refs).await?,
         SourceType::Kustomize => render::kustomize_build(&tree, &dir, source, &cx).await?,
     };
@@ -1007,6 +1020,10 @@ pub async fn compare(
             }),
             None => None,
         };
+        let shared_with = live
+            .as_ref()
+            .and_then(|l| owner(l, &settings))
+            .filter(|o| *o != name);
         resources.push(ResourceState {
             key: d.key.clone(),
             version: d.version.clone(),
@@ -1015,6 +1032,7 @@ pub async fn compare(
             wave: d.wave,
             live,
             health,
+            shared_with,
         });
     }
     // What the app managed before and git no longer has: prune candidates.
@@ -1054,6 +1072,7 @@ pub async fn compare(
             requires_pruning: true,
             live: Some(live),
             health,
+            shared_with: None,
         });
     }
     resources.sort_by(|a, b| a.key.cmp(&b.key));

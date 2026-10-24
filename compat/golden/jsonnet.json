@@ -1,0 +1,184 @@
+[
+  {
+    "apps": {
+      "jsonnet": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/generated-cm": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "jsonnet:/ConfigMap:<NS>/generated-cm",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/plain": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "jsonnet:/ConfigMap:<NS>/plain",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "a989a213c47e4f30692dff8efa575d8bcfc0655b",
+              "source": {
+                "directory": {
+                  "jsonnet": {
+                    "extVars": [
+                      {
+                        "name": "prefix",
+                        "value": "generated"
+                      }
+                    ],
+                    "tlas": [
+                      {
+                        "code": true,
+                        "name": "count",
+                        "value": "3"
+                      }
+                    ]
+                  }
+                },
+                "path": "j",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "a989a213c47e4f30692dff8efa575d8bcfc0655b",
+                "source": {
+                  "directory": {
+                    "jsonnet": {
+                      "extVars": [
+                        {
+                          "name": "prefix",
+                          "value": "generated"
+                        }
+                      ],
+                      "tlas": [
+                        {
+                          "code": true,
+                          "name": "count",
+                          "value": "3"
+                        }
+                      ]
+                    }
+                  },
+                  "path": "j",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "a989a213c47e4f30692dff8efa575d8bcfc0655b",
+              "source": {
+                "directory": {
+                  "jsonnet": {
+                    "extVars": [
+                      {
+                        "name": "prefix",
+                        "value": "generated"
+                      }
+                    ],
+                    "tlas": [
+                      {
+                        "code": true,
+                        "name": "count",
+                        "value": "3"
+                      }
+                    ]
+                  }
+                },
+                "path": "j",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "generated-cm",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "plain",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "directory": {
+                  "jsonnet": {
+                    "extVars": [
+                      {
+                        "name": "prefix",
+                        "value": "generated"
+                      }
+                    ],
+                    "tlas": [
+                      {
+                        "code": true,
+                        "name": "count",
+                        "value": "3"
+                      }
+                    ]
+                  }
+                },
+                "path": "j",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "a989a213c47e4f30692dff8efa575d8bcfc0655b",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

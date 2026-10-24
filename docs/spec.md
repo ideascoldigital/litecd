@@ -82,11 +82,13 @@ One binary, one Deployment (one replica; a Lease when there are more).
    apps wait on child Applications with one); status as Argo CD writes it. Done when `examples/platform` comes up with
    litecd in place of Argo CD, all apps Synced + Healthy, and litecd idles
    under 40 MiB.
-2. **Coverage:** hooks, multiple sources, `ignoreDifferences`, Kustomize
-   options, Argo CD's bundled Lua health library, PruneLast and
-   ApplyOutOfSyncOnly (done 2026-10-24: the corpus passes 24/24); still to
-   do: jsonnet, FailOnSharedResource, jq expressions beyond paths and
-   `select`, error conditions as Argo CD reports them.
+2. **Coverage** (done 2026-10-24: the corpus passes 26/26): hooks,
+   multiple sources, `ignoreDifferences`, Kustomize options, jsonnet
+   (`jsonnet` binary, extVars, tlas, libs), Argo CD's bundled Lua health
+   library, PruneLast, ApplyOutOfSyncOnly, shared resources
+   (SharedResourceWarning, FailOnSharedResource). Left for later: jq
+   expressions beyond paths and `select`, more of Argo CD's error
+   conditions, word for word.
 3. **ApplicationSet** (list, git directories/files, clusters, matrix, merge;
    fasttemplate and goTemplate), other clusters, apps in any namespace, sync
    windows; a bench phase against Argo CD on litek8s and k3s.
