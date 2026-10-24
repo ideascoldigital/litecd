@@ -2,9 +2,11 @@
 //! unchanged. See docs/spec.md for the plan.
 
 mod app;
+mod appset;
 mod check;
 mod controller;
 mod diff;
+mod gotemplate;
 mod health;
 mod ignore;
 mod kubeapi;
@@ -94,6 +96,14 @@ fn main() -> Result<()> {
                     tokio::spawn(async move {
                         if let Err(e) = webhook::serve(c, &listen).await {
                             tracing::error!("webhooks: {e:#}");
+                        }
+                    });
+                }
+                {
+                    let c = ctx.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = appset::run(c).await {
+                            tracing::error!("applicationsets: {e:#}");
                         }
                     });
                 }

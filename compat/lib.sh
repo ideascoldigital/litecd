@@ -186,7 +186,9 @@ app_describe() {
 # <label>. The runner compares the file with golden/<case>.json.
 snapshot() {
     local flags=()
-    [[ $1 == --skip-operation-state ]] && { flags=("$1"); shift; }
+    while [[ $1 == --* ]]; do
+        if [[ $1 == --appset ]]; then flags+=("$1" "$2"); shift 2; else flags+=("$1"); shift; fi
+    done
     local label=$1
     shift
     python3 "$COMPAT_DIR/snapshot.py" ${flags[@]+"${flags[@]}"} --namespace "$ARGOCD_NS" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"

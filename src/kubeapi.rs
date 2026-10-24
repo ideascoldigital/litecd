@@ -302,6 +302,27 @@ impl Kube {
         .await
     }
 
+    /// Merge patch of the status subresource.
+    pub async fn merge_patch_status(
+        &self,
+        kind: &Kind,
+        ns: Option<&str>,
+        name: &str,
+        patch: &Value,
+    ) -> Result<Value> {
+        let path = format!(
+            "{}/{name}/status?fieldManager={FIELD_MANAGER}",
+            kind.path(ns)
+        );
+        self.request(
+            http::Method::PATCH,
+            &path,
+            "application/merge-patch+json",
+            Some(patch),
+        )
+        .await
+    }
+
     pub async fn delete(
         &self,
         kind: &Kind,

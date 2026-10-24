@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gotemplate
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - {name: p, env: dev, replicas: 1}
+          - {name: q, env: prod, replicas: 3}
+  template:
+    metadata:
+      name: 'go-{{ .name }}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations:
+        compat-env: '{{ .env | upper }}'
+        compat-replicas: '{{ .replicas }}'
+        compat-printf: '{{ printf "%s-%s" .name .env }}'
+        compat-if: '{{ if eq .env "prod" }}production{{ else }}other{{ end }}'
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: 'apps/{{ .name }}'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{ .name }}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

@@ -1,0 +1,140 @@
+[
+  {
+    "apps": {},
+    "appsets": {
+      "gotemplate": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "go-p": {
+            "annotations": {
+              "compat-env": "DEV",
+              "compat-if": "other",
+              "compat-printf": "p-dev",
+              "compat-replicas": "1"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_go_template"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "gotemplate"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-p",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/p",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "go-q": {
+            "annotations": {
+              "compat-env": "PROD",
+              "compat-if": "production",
+              "compat-printf": "q-prod",
+              "compat-replicas": "3"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_go_template"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "gotemplate"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-q",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/q",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "go-p",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "go-q",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "generated"
+  }
+]

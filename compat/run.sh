@@ -100,7 +100,9 @@ record() { # id phase status seconds detail
 # the resources finalizer), AppProjects, Secrets, then its namespaces.
 case_cleanup() {
     local id=$1 ns=$2
-    # Applications first: one whose AppProject is gone cannot be finalized.
+    # ApplicationSets, then Applications (one whose AppProject is gone
+    # cannot be finalized).
+    k -n "$ARGOCD_NS" delete applicationsets -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
     k -n "$ARGOCD_NS" delete applications -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
     if ! wait_for 120 sh -c "[ -z \"\$(kubectl -n $ARGOCD_NS get applications -l compat.litecd.dev/case=$id -o name)\" ]" 2>/dev/null; then
         # A controller that never finalizes them must not block the next case.

@@ -1,0 +1,134 @@
+[
+  {
+    "apps": {},
+    "appsets": {
+      "merge": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "merge-a": {
+            "annotations": {
+              "compat-env": "override"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_merge"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "merge"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-a",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/a",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "merge-b": {
+            "annotations": {
+              "compat-env": "base"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_merge"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "merge"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-b",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/b",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "merge-a",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "merge-b",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "generated"
+  }
+]

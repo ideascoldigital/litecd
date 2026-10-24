@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: matrix
+spec:
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: <REPO_URL>
+              revision: main
+              directories: [{path: apps/*}]
+          - list:
+              elements: [{env: dev}, {env: prod}]
+  template:
+    metadata:
+      name: 'matrix-{{path.basename}}-{{env}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: '{{path}}'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{path.basename}}-{{env}}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

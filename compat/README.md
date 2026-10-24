@@ -37,6 +37,11 @@ the snapshots of every case), not committed.
   `operation`, as the CLI and UI start a sync), `app_refresh`, `wait_app`,
   `wait_rev`, `wait_op`, and `snapshot <label> <app>...`.
 
+`snapshot --appset <name>` records an ApplicationSet too: its conditions,
+the Applications its status lists, and for each Application it owns the
+spec, labels, annotations, finalizers and owner the template gave it, with
+its sync and health.
+
 A snapshot (`snapshot.py`) waits until the apps' status has been still for
 5 s, then records each Application's status, operation, annotations and
 finalizers, and the tracking metadata on every resource it manages
@@ -85,6 +90,20 @@ so litecd is compared on the same kind of cluster.
 | hooks | 2 | PreSync/PostSync Jobs with `HookSucceeded` |
 | ignore_differences | 2 | `/spec/replicas` ignored with `RespectIgnoreDifferences` |
 | multi_source | 2 | chart from a Helm repository, values file from git (`$values`) |
+| sync_skips_unchanged | 1 | a resource already in sync is not written (resourceVersion stays) |
+| kustomize_options | 2 | namePrefix/Suffix, images, replicas, commonLabels/Annotations, patches |
+| prune_last | 2 | `PruneLast=true`: pruned after every wave |
+| apply_out_of_sync_only | 2 | `ApplyOutOfSyncOnly=true`: only what is out of sync is applied |
+| lua_library_health | 2 | Argo CD's bundled Lua checks: a cert-manager Certificate, Ready and not |
+| jsonnet | 2 | jsonnet with extVars and tlas next to YAML |
+| fail_on_shared_resource | 2 | `SharedResourceWarning`; `FailOnSharedResource=true` fails the sync |
+| appset_list | 3 | list generator; an element removed deletes its Application |
+| appset_git_directories | 3 | git directories, an exclude, a directory added later |
+| appset_git_files | 3 | git files: nested keys, path, filename |
+| appset_clusters | 3 | the local cluster and `values` |
+| appset_matrix | 3 | git directories times a list |
+| appset_merge | 3 | a list overriding another by `mergeKeys` |
+| appset_go_template | 3 | goTemplate: pipelines, printf, if/else, `missingkey=error` |
 
 ## litecd
 

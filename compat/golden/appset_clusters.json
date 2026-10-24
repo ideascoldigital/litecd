@@ -1,0 +1,86 @@
+[
+  {
+    "apps": {},
+    "appsets": {
+      "clusters": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "clusters-in-cluster-local": {
+            "annotations": {
+              "compat-name": "in-cluster",
+              "compat-nameNormalized": "in-cluster",
+              "compat-server": "https://kubernetes.default.svc"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_clusters"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "clusters"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-local",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/c",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "clusters-in-cluster-local",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "generated"
+  }
+]

@@ -1,0 +1,321 @@
+[
+  {
+    "apps": {},
+    "appsets": {
+      "dirs": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "dirs-one": {
+            "annotations": {
+              "compat-path": "apps/one",
+              "compat-seg": "apps"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_git_directories"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "dirs"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-one",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/one",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "dirs-two": {
+            "annotations": {
+              "compat-path": "apps/two",
+              "compat-seg": "apps"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_git_directories"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "dirs"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-two",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/two",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "dirs-one",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "dirs-two",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "generated"
+  },
+  {
+    "apps": {},
+    "appsets": {
+      "dirs": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "dirs-one": {
+            "annotations": {
+              "compat-path": "apps/one",
+              "compat-seg": "apps"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_git_directories"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "dirs"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-one",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/one",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "dirs-three": {
+            "annotations": {
+              "compat-path": "apps/three",
+              "compat-seg": "apps"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_git_directories"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "dirs"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-three",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/three",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "dirs-two": {
+            "annotations": {
+              "compat-path": "apps/two",
+              "compat-seg": "apps"
+            },
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_git_directories"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "dirs"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-two",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/two",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "dirs-one",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "dirs-three",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "dirs-two",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "added"
+  }
+]

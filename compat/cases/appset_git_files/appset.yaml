@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: files
+spec:
+  generators:
+    - git:
+        repoURL: <REPO_URL>
+        revision: main
+        files:
+          - path: config/*/config.json
+  template:
+    metadata:
+      name: 'files-{{app.name}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations: {compat-env: '{{app.env}}', compat-dir: '{{path}}', compat-file: '{{path.filename}}', compat-base: '{{path.basename}}', compat-replicas: '{{replicas}}'}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: 'apps/{{app.name}}'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{app.name}}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

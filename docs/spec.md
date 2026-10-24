@@ -90,7 +90,8 @@ One binary, one Deployment (one replica; a Lease when there are more).
    expressions beyond paths and `select`, more of Argo CD's error
    conditions, word for word.
 3. **ApplicationSet** (list, git directories/files, clusters, matrix, merge;
-   fasttemplate and goTemplate), other clusters, apps in any namespace, sync
+   fasttemplate and goTemplate with sprig's common functions: done
+   2026-10-24, 7 corpus cases), other clusters, apps in any namespace, sync
    windows; a bench phase against Argo CD on litek8s and k3s.
 4. **UX:** an Applications view (tree, diff, sync) in `litek8s ui` and MCP
    tools, both through the Kubernetes API only; the `argocd` CLI's gRPC API if

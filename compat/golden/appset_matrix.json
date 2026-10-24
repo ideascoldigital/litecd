@@ -1,0 +1,226 @@
+[
+  {
+    "apps": {},
+    "appsets": {
+      "matrix": {
+        "conditions": [
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "False",
+            "type": "ErrorOccurred"
+          },
+          {
+            "message": "Successfully generated parameters for all Applications",
+            "reason": "ParametersGenerated",
+            "status": "True",
+            "type": "ParametersGenerated"
+          },
+          {
+            "message": "All applications have been generated successfully",
+            "reason": "ApplicationSetUpToDate",
+            "status": "True",
+            "type": "ResourcesUpToDate"
+          }
+        ],
+        "generated": {
+          "matrix-x-dev": {
+            "annotations": {},
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_matrix"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "matrix"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-x-dev",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/x",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "matrix-x-prod": {
+            "annotations": {},
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_matrix"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "matrix"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-x-prod",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/x",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "matrix-y-dev": {
+            "annotations": {},
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_matrix"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "matrix"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-y-dev",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/y",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          },
+          "matrix-y-prod": {
+            "annotations": {},
+            "finalizers": [
+              "resources-finalizer.argocd.argoproj.io"
+            ],
+            "health": "Healthy",
+            "labels": {
+              "compat.litecd.dev/case": "appset_matrix"
+            },
+            "owner": [
+              {
+                "apiVersion": "argoproj.io/v1alpha1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ApplicationSet",
+                "name": "matrix"
+              }
+            ],
+            "spec": {
+              "destination": {
+                "namespace": "<NS>-y-prod",
+                "server": "https://kubernetes.default.svc"
+              },
+              "project": "default",
+              "source": {
+                "path": "apps/y",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              },
+              "syncPolicy": {
+                "automated": {
+                  "prune": true,
+                  "selfHeal": true
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "sync": "Synced"
+          }
+        },
+        "resources": [
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "matrix-x-dev",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "matrix-x-prod",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "matrix-y-dev",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          },
+          {
+            "group": "argoproj.io",
+            "kind": "Application",
+            "name": "matrix-y-prod",
+            "namespace": "argocd",
+            "version": "v1alpha1"
+          }
+        ]
+      }
+    },
+    "label": "generated"
+  }
+]

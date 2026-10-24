@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dirs
+spec:
+  generators:
+    - git:
+        repoURL: <REPO_URL>
+        revision: main
+        requeueAfterSeconds: 10
+        directories:
+          - path: apps/*
+          - path: apps/skip
+            exclude: true
+  template:
+    metadata:
+      name: 'dirs-{{path.basename}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations: {compat-path: '{{path}}', compat-seg: '{{path[0]}}'}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: '{{path}}'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{path.basename}}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

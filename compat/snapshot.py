@@ -123,6 +123,45 @@ def app_snapshot(ns, name):
     }
 
 
+def appset_snapshot(ns, name):
+    """An ApplicationSet's conditions and the Applications it owns: what
+    the template made of each (spec, labels, annotations, finalizers, owner)
+    and where each got (sync and health)."""
+    aset = kubectl("-n", ns, "get", "applicationset", name, "-o", "json")
+    if aset is None:
+        return {"absent": True}
+    st = aset.get("status") or {}
+    conds = sorted(
+        ({k: c.get(k) for k in ("type", "status", "reason", "message")} for c in st.get("conditions") or []),
+        key=lambda c: c["type"] or "",
+    )
+    # Which Applications it lists; their sync and health there lag (Argo CD
+    # refreshes them on its own schedule): those are under "generated".
+    resources = sorted(
+        ({k: r.get(k) for k in ("group", "kind", "name", "namespace", "version")} for r in st.get("resources") or []),
+        key=lambda r: (r.get("name") or ""),
+    )
+    uid = aset["metadata"]["uid"]
+    apps = kubectl("-n", ns, "get", "applications", "-o", "json") or {"items": []}
+    generated = {}
+    for a in apps["items"]:
+        owners = [o for o in a["metadata"].get("ownerReferences") or [] if o.get("uid") == uid]
+        if not owners:
+            continue
+        m = a["metadata"]
+        generated[m["name"]] = {
+            "spec": a.get("spec"),
+            "labels": m.get("labels") or {},
+            "annotations": {k: v for k, v in (m.get("annotations") or {}).items()
+                            if k not in ("kubectl.kubernetes.io/last-applied-configuration", "argocd.argoproj.io/refresh")},
+            "finalizers": m.get("finalizers") or [],
+            "owner": [{k: o.get(k) for k in ("apiVersion", "kind", "name", "controller", "blockOwnerDeletion")} for o in owners],
+            "sync": ((a.get("status") or {}).get("sync") or {}).get("status"),
+            "health": ((a.get("status") or {}).get("health") or {}).get("status"),
+        }
+    return {"conditions": conds, "resources": resources, "generated": dict(sorted(generated.items()))}
+
+
 def settle(ns, names, quiet=5, limit=90):
     """Wait until the apps' normalized status has not changed for `quiet`
     seconds (at most `limit`): a snapshot must not catch a controller between
@@ -130,6 +169,18 @@ def settle(ns, names, quiet=5, limit=90):
     last, since, start = None, time.time(), time.time()
     while time.time() - start < limit:
         cur = [app_status(ns, n) for n in names]
+        if cur != last:
+            last, since = cur, time.time()
+        elif time.time() - since >= quiet:
+            return
+        time.sleep(1)
+
+
+def settle_appsets(ns, names, quiet=5, limit=120):
+    """As settle, for ApplicationSets and what they generated."""
+    last, since, start = None, time.time(), time.time()
+    while time.time() - start < limit:
+        cur = [appset_snapshot(ns, n) for n in names]
         if cur != last:
             last, since = cur, time.time()
         elif time.time() - since >= quiet:
@@ -149,10 +200,15 @@ def main():
     a.add_argument("--repo", required=True)
     a.add_argument("--ns", required=True)
     a.add_argument("--skip-operation-state", action="store_true", help="leave status.operationState out (see README)")
-    a.add_argument("apps", nargs="+")
+    a.add_argument("--appset", action="append", default=[], help="an ApplicationSet to record (repeatable)")
+    a.add_argument("apps", nargs="*")
     args = a.parse_args()
     settle(args.namespace, args.apps)
+    if args.appset:
+        settle_appsets(args.namespace, args.appset)
     snap = {"label": args.label, "apps": {n: app_snapshot(args.namespace, n) for n in args.apps}}
+    if args.appset:
+        snap["appsets"] = {n: appset_snapshot(args.namespace, n) for n in args.appset}
     if args.skip_operation_state:
         for a in snap["apps"].values():
             a.get("status", {}).pop("operationState", None)

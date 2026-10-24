@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: merge
+spec:
+  generators:
+    - merge:
+        mergeKeys: [name]
+        generators:
+          - list:
+              elements: [{name: a, env: base}, {name: b, env: base}]
+          - list:
+              elements: [{name: a, env: override}]
+  template:
+    metadata:
+      name: 'merge-{{name}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations: {compat-env: '{{env}}'}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: 'apps/{{name}}'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{name}}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters
+spec:
+  generators:
+    - clusters:
+        values: {suffix: local}
+  template:
+    metadata:
+      name: 'clusters-{{name}}-{{values.suffix}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations: {compat-server: '{{server}}', compat-name: '{{name}}', compat-nameNormalized: '{{nameNormalized}}'}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: 'apps/c'}
+      destination: {server: https://kubernetes.default.svc, namespace: '<NS>-{{values.suffix}}'}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]
