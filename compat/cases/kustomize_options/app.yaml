@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kustomize-options
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: base
+    kustomize:
+      namePrefix: app-
+      nameSuffix: -v1
+      images: [registry.k8s.io/pause=registry.k8s.io/pause:3.9]
+      replicas: [{name: web, count: 2}]
+      commonLabels: {team: compat}
+      commonAnnotations: {owner: corpus}
+      patches:
+        - target: {kind: ConfigMap, name: settings}
+          patch: |-
+            - op: add
+              path: /data/patched
+              value: "yes"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

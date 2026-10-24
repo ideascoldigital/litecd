@@ -148,10 +148,14 @@ def main():
     a.add_argument("--label", required=True)
     a.add_argument("--repo", required=True)
     a.add_argument("--ns", required=True)
+    a.add_argument("--skip-operation-state", action="store_true", help="leave status.operationState out (see README)")
     a.add_argument("apps", nargs="+")
     args = a.parse_args()
     settle(args.namespace, args.apps)
     snap = {"label": args.label, "apps": {n: app_snapshot(args.namespace, n) for n in args.apps}}
+    if args.skip_operation_state:
+        for a in snap["apps"].values():
+            a.get("status", {}).pop("operationState", None)
     text = json.dumps(snap, sort_keys=True)
     text = text.replace(args.repo, "<REPO_URL>").replace(args.ns, "<NS>")
     sys.stdout.write(text + "\n")

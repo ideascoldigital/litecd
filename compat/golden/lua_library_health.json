@@ -1,0 +1,201 @@
+[
+  {
+    "apps": {
+      "lua-lib-failed": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "cert-manager.io/Certificate/<NS>-failed/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "lua-lib-failed:cert-manager.io/Certificate:<NS>-failed/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Degraded"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+              "source": {
+                "path": "failed",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+                "source": {
+                  "path": "failed",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+              "source": {
+                "path": "failed",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "group": "cert-manager.io",
+              "kind": "Certificate",
+              "name": "web",
+              "namespace": "<NS>-failed",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>-failed",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "failed",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+            "status": "Synced"
+          }
+        }
+      },
+      "lua-lib-ready": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "cert-manager.io/Certificate/<NS>-ready/web": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "lua-lib-ready:cert-manager.io/Certificate:<NS>-ready/web",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+              "source": {
+                "path": "ready",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+                "source": {
+                  "path": "ready",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+              "source": {
+                "path": "ready",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "group": "cert-manager.io",
+              "kind": "Certificate",
+              "name": "web",
+              "namespace": "<NS>-ready",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>-ready",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "ready",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "f46854ca2be61043f5819cc716e6f9fe7146e60a",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

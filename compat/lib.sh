@@ -181,11 +181,13 @@ app_describe() {
     app_get "$1" '.status' | python3 -c 'import json,sys; d=json.load(sys.stdin); [d.pop(k,None) for k in ("history","summary")]; print(json.dumps(d,indent=1)[:4000])' 2>/dev/null || true
 }
 
-# snapshot <label> <app>...: the apps' normalized status and the tracking
+# snapshot [--skip-operation-state] <label> <app>...: the apps' normalized status and the tracking
 # metadata of their resources, appended to the case's snapshot file under
 # <label>. The runner compares the file with golden/<case>.json.
 snapshot() {
+    local flags=()
+    [[ $1 == --skip-operation-state ]] && { flags=("$1"); shift; }
     local label=$1
     shift
-    python3 "$COMPAT_DIR/snapshot.py" --namespace "$ARGOCD_NS" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"
+    python3 "$COMPAT_DIR/snapshot.py" ${flags[@]+"${flags[@]}"} --namespace "$ARGOCD_NS" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"
 }

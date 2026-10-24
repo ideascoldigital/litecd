@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lua-lib-ready
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: ready
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>-ready
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lua-lib-failed
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: failed
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>-failed
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

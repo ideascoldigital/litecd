@@ -293,15 +293,181 @@ pub async fn helm_template(
     parse_manifests(&String::from_utf8_lossy(&out?))
 }
 
-/// `kustomize build` of a directory.
-pub async fn kustomize_build(dir: &Path, cx: &RenderCtx<'_>) -> Result<Vec<Value>> {
+/// `kustomize build` of a directory; with the source's kustomize options
+/// applied (as Argo CD does with `kustomize edit`) to a copy of the tree.
+pub async fn kustomize_build(
+    tree: &Path,
+    dir: &Path,
+    source: &Value,
+    cx: &RenderCtx<'_>,
+) -> Result<Vec<Value>> {
+    let opts = &source["kustomize"];
+    let has_opts = opts
+        .as_object()
+        .is_some_and(|o| o.keys().any(|k| k != "version"));
+    let (work, build_dir) = if has_opts {
+        let work =
+            cx.cache
+                .join("tmp")
+                .join(format!("kustomize-{}-{}", std::process::id(), unique()));
+        copy_dir(tree, &work)?;
+        let rel = dir.strip_prefix(tree).unwrap_or(Path::new("."));
+        let d = work.join(rel);
+        edit_kustomization(&d, opts)?;
+        (Some(work), d)
+    } else {
+        (None, dir.to_path_buf())
+    };
     let mut cmd = tokio::process::Command::new("kustomize");
-    cmd.arg("build").arg(dir);
+    cmd.arg("build").arg(&build_dir);
     for o in cx.kustomize_build_options.split_whitespace() {
         cmd.arg(o);
     }
-    let out = run_command(&mut cmd, "kustomize build").await?;
-    parse_manifests(&String::from_utf8_lossy(&out))
+    let out = run_command(&mut cmd, "kustomize build").await;
+    if let Some(w) = work {
+        let _ = std::fs::remove_dir_all(w);
+    }
+    parse_manifests(&String::from_utf8_lossy(&out?))
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if e.file_type()?.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// `[old=]new[:tag|@digest]`, as `kustomize edit set image` takes it.
+pub fn image_entry(spec: &str) -> Value {
+    let (name, rest) = match spec.split_once('=') {
+        Some((n, r)) => (n.to_string(), r.to_string()),
+        None => (String::new(), spec.to_string()),
+    };
+    let mut e = serde_json::Map::new();
+    let (image, digest) = match rest.split_once('@') {
+        Some((i, d)) => (i.to_string(), Some(d.to_string())),
+        None => (rest.clone(), None),
+    };
+    // A tag is after the last ':' that comes after the last '/' (a registry port is not a tag).
+    let slash = image.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let (new_name, tag) = match image[slash..].rfind(':') {
+        Some(c) => (
+            image[..slash + c].to_string(),
+            Some(image[slash + c + 1..].to_string()),
+        ),
+        None => (image.clone(), None),
+    };
+    if name.is_empty() {
+        e.insert("name".into(), Value::String(new_name));
+    } else {
+        e.insert("name".into(), Value::String(name.clone()));
+        if new_name != name {
+            e.insert("newName".into(), Value::String(new_name));
+        }
+    }
+    if let Some(t) = tag {
+        e.insert("newTag".into(), Value::String(t));
+    }
+    if let Some(d) = digest {
+        e.insert("digest".into(), Value::String(d));
+    }
+    Value::Object(e)
+}
+
+/// Apply Argo CD's kustomize options to the kustomization in `dir`.
+pub fn edit_kustomization(dir: &Path, opts: &Value) -> Result<()> {
+    let file = KUSTOMIZATIONS
+        .iter()
+        .map(|k| dir.join(k))
+        .find(|p| p.exists())
+        .context("no kustomization file")?;
+    let mut k: Value = serde_yaml::from_str(&std::fs::read_to_string(&file)?)
+        .context("parsing the kustomization")?;
+    if !k.is_object() {
+        k = Value::Object(Default::default());
+    }
+    for f in ["namePrefix", "nameSuffix", "namespace"] {
+        if let Some(v) = opts[f].as_str().filter(|v| !v.is_empty()) {
+            k[f] = Value::String(v.to_string());
+        }
+    }
+    let merge_list = |k: &mut Value, field: &str, entries: Vec<Value>, key: &str| {
+        let mut list = k[field].as_array().cloned().unwrap_or_default();
+        for e in entries {
+            match list.iter_mut().find(|x| x[key] == e[key]) {
+                Some(x) => *x = e,
+                None => list.push(e),
+            }
+        }
+        k[field] = Value::Array(list);
+    };
+    let images: Vec<Value> = opts["images"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(image_entry)
+        .collect();
+    if !images.is_empty() {
+        merge_list(&mut k, "images", images, "name");
+    }
+    let replicas: Vec<Value> = opts["replicas"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| {
+            let count = r["count"]
+                .as_i64()
+                .or_else(|| r["count"].as_str().and_then(|c| c.parse().ok()))
+                .unwrap_or(0);
+            serde_json::json!({"name": r["name"], "count": count})
+        })
+        .collect();
+    if !replicas.is_empty() {
+        merge_list(&mut k, "replicas", replicas, "name");
+    }
+    if let Some(labels) = opts["commonLabels"].as_object().filter(|l| !l.is_empty()) {
+        if opts["labelWithoutSelector"].as_bool() == Some(true) {
+            let mut list = k["labels"].as_array().cloned().unwrap_or_default();
+            let mut entry = serde_json::json!({"pairs": labels, "includeSelectors": false});
+            if opts["labelIncludeTemplates"].as_bool() == Some(true) {
+                entry["includeTemplates"] = Value::Bool(true);
+            }
+            list.push(entry);
+            k["labels"] = Value::Array(list);
+        } else {
+            let mut m = k["commonLabels"].as_object().cloned().unwrap_or_default();
+            m.extend(labels.clone());
+            k["commonLabels"] = Value::Object(m);
+        }
+    }
+    if let Some(ann) = opts["commonAnnotations"]
+        .as_object()
+        .filter(|a| !a.is_empty())
+    {
+        let mut m = k["commonAnnotations"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        m.extend(ann.clone());
+        k["commonAnnotations"] = Value::Object(m);
+    }
+    for f in ["patches", "components"] {
+        if let Some(extra) = opts[f].as_array().filter(|a| !a.is_empty()) {
+            let mut list = k[f].as_array().cloned().unwrap_or_default();
+            list.extend(extra.iter().cloned());
+            k[f] = Value::Array(list);
+        }
+    }
+    std::fs::write(&file, serde_yaml::to_string(&k)?)?;
+    Ok(())
 }
 
 fn unique() -> u64 {
@@ -362,6 +528,47 @@ mod tests {
         .unwrap();
         assert_eq!(names(&objs), ["a", "b"]);
         assert!(parse_manifests("kind: ConfigMap\n").is_err());
+    }
+
+    #[test]
+    fn kustomize_images() {
+        assert_eq!(
+            image_entry("registry.k8s.io/pause=registry.k8s.io/pause:3.9"),
+            json!({"name": "registry.k8s.io/pause", "newTag": "3.9"})
+        );
+        assert_eq!(
+            image_entry("nginx=my.reg:5000/nginx:1.2"),
+            json!({"name": "nginx", "newName": "my.reg:5000/nginx", "newTag": "1.2"})
+        );
+        assert_eq!(
+            image_entry("nginx:1.2"),
+            json!({"name": "nginx", "newTag": "1.2"})
+        );
+        assert_eq!(
+            image_entry("nginx@sha256:abc"),
+            json!({"name": "nginx", "digest": "sha256:abc"})
+        );
+    }
+
+    #[test]
+    fn kustomize_edits() {
+        let tmp = std::env::temp_dir().join(format!("litecd-kedit-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("kustomization.yaml"),
+            "resources: [a.yaml]\ncommonLabels: {x: y}\n",
+        )
+        .unwrap();
+        edit_kustomization(&tmp, &json!({"namePrefix": "p-", "replicas": [{"name": "web", "count": "2"}], "commonLabels": {"team": "t"},
+            "patches": [{"patch": "x"}]})).unwrap();
+        let k: Value =
+            serde_yaml::from_str(&std::fs::read_to_string(tmp.join("kustomization.yaml")).unwrap())
+                .unwrap();
+        assert_eq!(k["namePrefix"], "p-");
+        assert_eq!(k["replicas"], json!([{"name": "web", "count": 2}]));
+        assert_eq!(k["commonLabels"], json!({"x": "y", "team": "t"}));
+        assert_eq!(k["patches"], json!([{"patch": "x"}]));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

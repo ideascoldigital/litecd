@@ -146,13 +146,14 @@ impl Request {
 enum Task<'a> {
     Apply(&'a Desired, Option<&'a ResourceState>),
     Prune(&'a ResourceState),
+    PruneLast(&'a ResourceState),
 }
 
 impl Task<'_> {
     fn key(&self) -> &Key {
         match self {
             Task::Apply(d, _) => &d.key,
-            Task::Prune(r) => &r.key,
+            Task::Prune(r) | Task::PruneLast(r) => &r.key,
         }
     }
 
@@ -160,6 +161,8 @@ impl Task<'_> {
         match self {
             Task::Apply(d, _) => d.wave,
             Task::Prune(r) => r.wave,
+            // PruneLast: after every wave.
+            Task::PruneLast(_) => i64::MAX,
         }
     }
 }
@@ -270,7 +273,15 @@ pub async fn run(
         .iter()
         .filter(|r| r.requires_pruning && req.wants(&r.key))
     {
-        tasks.push(Task::Prune(r));
+        let last = req.has("PruneLast=true")
+            || r.live
+                .as_ref()
+                .is_some_and(|l| app::options_of(l).iter().any(|o| o == "PruneLast=true"));
+        tasks.push(if last {
+            Task::PruneLast(r)
+        } else {
+            Task::Prune(r)
+        });
     }
     tasks.sort_by(|a, b| {
         (a.wave(), kind_rank(&a.key().kind), &a.key().name).cmp(&(
@@ -301,7 +312,7 @@ pub async fn run(
     let hooks: Vec<&Desired> = cmp.desired.iter().filter(|d| d.hook.is_some()).collect();
     let applies = tasks.iter().filter_map(|t| match t {
         Task::Apply(d, _) => Some(*d),
-        Task::Prune(_) => None,
+        Task::Prune(_) | Task::PruneLast(_) => None,
     });
     for d in applies.chain(hooks.iter().copied()) {
         if d.kind.is_none() && !defines_crd(d) && !d.has_option("SkipDryRunOnMissingResource=true")
@@ -395,6 +406,9 @@ pub async fn run(
             waited_last = false;
             for t in tasks.iter().filter(|t| t.wave() == *wave) {
                 match t {
+                    // ApplyOutOfSyncOnly: what is in sync is left alone.
+                    Task::Apply(_, Some(state))
+                        if req.has("ApplyOutOfSyncOnly=true") && state.synced => {}
                     Task::Apply(d, state) => {
                         let r = apply(ctx, d, *state, req).await;
                         if r.status == "SyncFailed" && failed.is_none() {
@@ -405,7 +419,7 @@ pub async fn run(
                         }
                         results.push(r);
                     }
-                    Task::Prune(r) => {
+                    Task::Prune(r) | Task::PruneLast(r) => {
                         let res = prune(ctx, r, req).await;
                         if res.status == "SyncFailed" && failed.is_none() {
                             failed = Some(res.message.clone());
@@ -744,12 +758,15 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
             .apply(&kind, ns, &d.key.name, &d.obj, false)
             .await
             .map(|_| format!("{what} serverside-applied"))
+    } else if live.is_some() && state.is_some_and(|s| s.synced) {
+        // As kubectl apply: nothing to change, nothing written.
+        Ok(format!("{what} unchanged"))
     } else {
         let obj = app::with_last_applied(&d.obj);
-        let verb = match (live, state.map(|s| s.synced)) {
-            (None, _) => "created",
-            (Some(_), Some(true)) => "unchanged",
-            _ => "configured",
+        let verb = if live.is_none() {
+            "created"
+        } else {
+            "configured"
         };
         ctx.kube
             .apply(&kind, ns, &d.key.name, &obj, false)

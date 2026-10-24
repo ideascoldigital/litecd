@@ -53,6 +53,11 @@ and options, its hooks, the resources that failed (with their messages) and,
 when it did not succeed, its retry count; what synced is in
 `status.resources`.
 
+A case can leave the operation state out of one snapshot
+(`snapshot --skip-operation-state`) when Argo CD's own last operation there
+is an artifact of that race every time: prune_last, where the PruneLast
+prune is the last thing a sync does and an empty self-heal follows it.
+
 Golden files are Argo CD on litek8s: messages that come from the API server
 (a rejected object, a Deployment's progress deadline) are litek8s's wording,
 so litecd is compared on the same kind of cluster.
@@ -83,9 +88,10 @@ so litecd is compared on the same kind of cluster.
 
 ## litecd
 
-2026-10-24, litecd with phase 1 and phase 2's hooks, multiple sources and
-ignoreDifferences, on a fresh cluster (Argo CD's CRDs only): 19/19 cases
-equal their golden files, twice in a row.
+2026-10-24, litecd with phase 1 and most of phase 2 on a fresh cluster
+(Argo CD's CRDs only): 24/24 cases equal their golden files, twice in a
+row. The five newest cases' golden files were written from Argo CD the
+same day and reproduced twice before litecd ran them.
 
 ```bash
 deploy/build.sh && LITECD_MANIFEST=deploy/install compat/run.sh --target litecd

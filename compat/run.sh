@@ -64,7 +64,10 @@ echo "cluster: $(kubectl config current-context) ($(kubectl config view --minify
 # The git server.
 k apply -f "$COMPAT_DIR/git/git-server.yaml" >/dev/null
 k -n "$GIT_NS" create configmap git-server --from-file="$COMPAT_DIR/git/server.py" --dry-run=client -o yaml | k apply -f - >/dev/null
-k -n "$GIT_NS" rollout restart deploy/git >/dev/null
+# Restarted only when server.py changes: its pod installs git at start.
+sum=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:16])' "$COMPAT_DIR/git/server.py")
+k -n "$GIT_NS" patch deploy git --type merge \
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"compat.litecd.dev/server\":\"$sum\"}}}}}" >/dev/null
 with_timeout 300 kubectl -n "$GIT_NS" rollout status deploy/git --timeout 5m >/dev/null || { echo "git server not ready" >&2; exit 1; }
 kubectl -n "$GIT_NS" port-forward svc/git :80 >"$WORK/pf.log" 2>&1 &
 pf_pid=$!

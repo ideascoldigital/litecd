@@ -11,9 +11,11 @@ and Kustomize, single or multiple sources (`$ref` value files), with
 automated sync, prune, self-heal, sync waves, hooks (PreSync, Sync,
 PostSync, SyncFail, Helm's install/upgrade hooks, delete policies),
 `ignoreDifferences` (JSON pointers, jq paths, field managers; from the app
-and argocd-cm), retries, the usual sync options, built-in and Lua health
-checks and the app-of-apps pattern, and writes the same `.status` Argo CD
-does: it passes all 19 cases of the compatibility corpus
+and argocd-cm), Kustomize options, retries, the usual sync options
+(PruneLast and ApplyOutOfSyncOnly among them), built-in health checks, Argo
+CD's own Lua library of them and Lua ones from argocd-cm, and the
+app-of-apps pattern, and writes the same `.status` Argo CD does: it passes
+all 24 cases of the compatibility corpus
 ([compat/](compat/)), whose expected results come from Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
 
 On litek8s the controller process takes 8–9 MiB of RSS through the whole

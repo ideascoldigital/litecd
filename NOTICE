@@ -6,6 +6,9 @@ licensed under the Apache License, Version 2.0:
 
 - deploy/install/crds/application-crd.yaml and appproject-crd.yaml, the
   CustomResourceDefinitions of Argo CD v3.5.5 (manifests/crds), unchanged.
+- vendor/argo-cd/resource_customizations/*/*/health.lua, Argo CD v3.5.5's
+  Lua health checks (resource_customizations), unchanged; built into the
+  binary by build.rs.
 
 Argo and Argo CD are trademarks of The Linux Foundation. litecd is not
 affiliated with or endorsed by the Argo project.

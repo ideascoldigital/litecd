@@ -108,10 +108,48 @@ pub fn assess(obj: &Value, custom: &Customizations) -> Result<Option<Health>> {
     if obj["metadata"]["annotations"]["argocd.argoproj.io/ignore-healthcheck"] == "true" {
         return Ok(None);
     }
-    if let Some(script) = custom.scripts.get(&format!("{group}/{kind}")) {
+    // As Argo CD looks: argocd-cm's scripts, then its bundled ones (both
+    // with wildcards), then the built-in checks.
+    if let Some(script) = custom_script(custom, group, kind).or_else(|| bundled(group, kind)) {
         return lua(script, obj).map(Some);
     }
     Ok(builtin(group, kind, obj))
+}
+
+mod bundled_scripts {
+    include!(concat!(env!("OUT_DIR"), "/bundled_health.rs"));
+}
+
+fn wild(pattern: &str, text: &str) -> bool {
+    pattern == text || crate::app::glob_match(pattern, text)
+}
+
+fn custom_script<'a>(custom: &'a Customizations, group: &str, kind: &str) -> Option<&'a str> {
+    if let Some(s) = custom.scripts.get(&format!("{group}/{kind}")) {
+        return Some(s);
+    }
+    custom
+        .scripts
+        .iter()
+        .find(|(k, _)| {
+            k.contains('*')
+                && k.split_once('/')
+                    .is_some_and(|(g, kk)| wild(g, group) && wild(kk, kind))
+        })
+        .map(|(_, s)| s.as_str())
+}
+
+/// Argo CD's resource_customizations health scripts (vendor/argo-cd).
+fn bundled(group: &str, kind: &str) -> Option<&'static str> {
+    let all = bundled_scripts::BUNDLED;
+    all.iter()
+        .find(|(g, k, _)| *g == group && *k == kind)
+        .or_else(|| {
+            all.iter().find(|(g, k, _)| {
+                (g.contains('*') || k.contains('*')) && wild(g, group) && wild(k, kind)
+            })
+        })
+        .map(|(_, _, s)| *s)
 }
 
 fn builtin(group: &str, kind: &str, o: &Value) -> Option<Health> {
@@ -487,6 +525,22 @@ mod tests {
             st(json!({"apiVersion": "argoproj.io/v1alpha1", "kind": "Application"})),
             None
         );
+    }
+
+    #[test]
+    fn bundled_library() {
+        assert!(bundled_scripts::BUNDLED.len() > 200);
+        let cert = |status: &str| {
+            json!({"apiVersion": "cert-manager.io/v1", "kind": "Certificate",
+                "status": {"conditions": [{"type": "Ready", "status": status, "message": "m"}]}})
+        };
+        assert_eq!(st(cert("True")), Some(Status::Healthy));
+        assert_eq!(st(cert("False")), Some(Status::Degraded));
+        // A wildcard directory: _.crossplane.io/_
+        assert!(bundled("aws.crossplane.io", "Bucket").is_some());
+        let crd = json!({"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition", "metadata": {"name": "x.example.com"}, "status": {"conditions": [
+            {"type": "NamesAccepted", "status": "True"}, {"type": "Established", "status": "True"}]}});
+        assert_eq!(st(crd), Some(Status::Healthy));
     }
 
     #[test]

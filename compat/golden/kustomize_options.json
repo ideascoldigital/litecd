@@ -1,0 +1,233 @@
+[
+  {
+    "apps": {
+      "kustomize-options": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/app-settings-v1": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "kustomize-options:/ConfigMap:<NS>/app-settings-v1",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "apps/Deployment/<NS>/app-web-v1": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "kustomize-options:apps/Deployment:<NS>/app-web-v1",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "704fd8e7e86154338b346b1a7bd5e2c3c3da28aa",
+              "source": {
+                "kustomize": {
+                  "commonAnnotations": {
+                    "owner": "corpus"
+                  },
+                  "commonLabels": {
+                    "team": "compat"
+                  },
+                  "images": [
+                    "registry.k8s.io/pause=registry.k8s.io/pause:3.9"
+                  ],
+                  "namePrefix": "app-",
+                  "nameSuffix": "-v1",
+                  "patches": [
+                    {
+                      "patch": "- op: add\n  path: /data/patched\n  value: \"yes\"",
+                      "target": {
+                        "kind": "ConfigMap",
+                        "name": "settings"
+                      }
+                    }
+                  ],
+                  "replicas": [
+                    {
+                      "count": 2,
+                      "name": "web"
+                    }
+                  ]
+                },
+                "path": "base",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "704fd8e7e86154338b346b1a7bd5e2c3c3da28aa",
+                "source": {
+                  "kustomize": {
+                    "commonAnnotations": {
+                      "owner": "corpus"
+                    },
+                    "commonLabels": {
+                      "team": "compat"
+                    },
+                    "images": [
+                      "registry.k8s.io/pause=registry.k8s.io/pause:3.9"
+                    ],
+                    "namePrefix": "app-",
+                    "nameSuffix": "-v1",
+                    "patches": [
+                      {
+                        "patch": "- op: add\n  path: /data/patched\n  value: \"yes\"",
+                        "target": {
+                          "kind": "ConfigMap",
+                          "name": "settings"
+                        }
+                      }
+                    ],
+                    "replicas": [
+                      {
+                        "count": 2,
+                        "name": "web"
+                      }
+                    ]
+                  },
+                  "path": "base",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "704fd8e7e86154338b346b1a7bd5e2c3c3da28aa",
+              "source": {
+                "kustomize": {
+                  "commonAnnotations": {
+                    "owner": "corpus"
+                  },
+                  "commonLabels": {
+                    "team": "compat"
+                  },
+                  "images": [
+                    "registry.k8s.io/pause=registry.k8s.io/pause:3.9"
+                  ],
+                  "namePrefix": "app-",
+                  "nameSuffix": "-v1",
+                  "patches": [
+                    {
+                      "patch": "- op: add\n  path: /data/patched\n  value: \"yes\"",
+                      "target": {
+                        "kind": "ConfigMap",
+                        "name": "settings"
+                      }
+                    }
+                  ],
+                  "replicas": [
+                    {
+                      "count": 2,
+                      "name": "web"
+                    }
+                  ]
+                },
+                "path": "base",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "app-settings-v1",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "group": "apps",
+              "kind": "Deployment",
+              "name": "app-web-v1",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Kustomize",
+          "summary": {
+            "images": [
+              "registry.k8s.io/pause:3.9"
+            ]
+          },
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "kustomize": {
+                  "commonAnnotations": {
+                    "owner": "corpus"
+                  },
+                  "commonLabels": {
+                    "team": "compat"
+                  },
+                  "images": [
+                    "registry.k8s.io/pause=registry.k8s.io/pause:3.9"
+                  ],
+                  "namePrefix": "app-",
+                  "nameSuffix": "-v1",
+                  "patches": [
+                    {
+                      "patch": "- op: add\n  path: /data/patched\n  value: \"yes\"",
+                      "target": {
+                        "kind": "ConfigMap",
+                        "name": "settings"
+                      }
+                    }
+                  ],
+                  "replicas": [
+                    {
+                      "count": 2,
+                      "name": "web"
+                    }
+                  ]
+                },
+                "path": "base",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "704fd8e7e86154338b346b1a7bd5e2c3c3da28aa",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "synced"
+  }
+]

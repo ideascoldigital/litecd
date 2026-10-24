@@ -597,7 +597,7 @@ async fn render_one(
     let objects = match ty {
         SourceType::Directory => render::directory(&dir, &source["directory"])?,
         SourceType::Helm => render::helm_template(&dir, source, &cx, refs).await?,
-        SourceType::Kustomize => render::kustomize_build(&dir, &cx).await?,
+        SourceType::Kustomize => render::kustomize_build(&tree, &dir, source, &cx).await?,
     };
     Ok((ty, objects))
 }

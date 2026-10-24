@@ -1,0 +1,97 @@
+[
+  {
+    "apps": {
+      "prune-last": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {
+          "ConfigMap/<NS>/a": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "prune-last:/ConfigMap:<NS>/a",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          },
+          "ConfigMap/<NS>/b": {
+            "annotations": {
+              "argocd.argoproj.io/sync-wave": "1",
+              "argocd.argoproj.io/tracking-id": "prune-last:/ConfigMap:<NS>/b",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "0c55f13067c61b25eb4da6bce7ec1652ec1eb9e1",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            {
+              "id": 1,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "b79cf258579f3487259f5a49971f1cc3fe235a5b",
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "a",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            },
+            {
+              "kind": "ConfigMap",
+              "name": "b",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "syncWave": 1,
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "m",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "b79cf258579f3487259f5a49971f1cc3fe235a5b",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "pruned"
+  }
+]

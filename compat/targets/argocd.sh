@@ -3,9 +3,12 @@
 # Argo CD bench: chart 10.10.5 = Argo CD v3.5.5.
 ARGOCD_CHART_VERSION=${ARGOCD_CHART_VERSION:-10.10.5}
 
+# ARGOCD_CHART: a downloaded chart (.tgz) instead of the Helm repository,
+# whose index is large and slow to fetch on a poor connection.
 target_install() {
-    with_timeout 600 helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm \
-        --version "$ARGOCD_CHART_VERSION" --namespace "$ARGOCD_NS" --create-namespace --wait --timeout 9m \
+    local chart=(argo-cd --repo https://argoproj.github.io/argo-helm --version "$ARGOCD_CHART_VERSION")
+    [[ -n ${ARGOCD_CHART:-} ]] && chart=("$ARGOCD_CHART")
+    with_timeout 600 helm upgrade --install argocd "${chart[@]}" --namespace "$ARGOCD_NS" --create-namespace --wait --timeout 9m \
         --set dex.enabled=false --set notifications.enabled=false >/dev/null
 }
 
