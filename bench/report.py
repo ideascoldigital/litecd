@@ -21,7 +21,8 @@ def main():
     a, l = runs["argocd"], runs["litecd"]
     rows = [
         ("Memory, no apps (working set)", f"{a['idle_no_apps']['total']['working_set_mib']} MiB", f"{l['idle_no_apps']['total']['working_set_mib']} MiB"),
-        ("Memory, 20 apps synced, idle", f"{a['idle_20_apps']['total']['working_set_mib']} MiB", f"{l['idle_20_apps']['total']['working_set_mib']} MiB"),
+        ("… anonymous (heap) of that", f"{a['idle_no_apps']['total']['anon_mib']} MiB", f"{l['idle_no_apps']['total']['anon_mib']} MiB"),
+        ("Memory, 20 apps synced, idle (working set)", f"{a['idle_20_apps']['total']['working_set_mib']} MiB", f"{l['idle_20_apps']['total']['working_set_mib']} MiB"),
         ("… anonymous (heap) of that", f"{a['idle_20_apps']['total']['anon_mib']} MiB", f"{l['idle_20_apps']['total']['anon_mib']} MiB"),
         ("Memory, peak during the burst", f"{a['burst']['peak_working_set_mib']} MiB", f"{l['burst']['peak_working_set_mib']} MiB"),
         ("CPU idle, no apps (% of one CPU)", f"{a['idle_no_apps']['total']['cpu_percent']} %", f"{l['idle_no_apps']['total']['cpu_percent']} %"),

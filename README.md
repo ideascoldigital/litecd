@@ -32,6 +32,12 @@ its whole smoke test, at 28 MiB against Argo CD's 723 MiB:
 `e2e/platform.sh` (a patch on a copy of litek8s's `examples/platform`;
 litek8s itself does not know litecd).
 
+Side by side on one litek8s cluster with 20 Applications
+([bench/RESULTS.md](bench/RESULTS.md)): 6.9 MiB of working set against
+Argo CD's 310 MiB (4.1 against 225 MiB anonymous), 19 apps at once
+synced in 3.3 s against 5.7 s, single syncs and heals within a few tenths
+of a second of each other.
+
 Pushes: litecd answers `/api/webhook` (GitHub, Gitea, Gogs, GitLab) behind
 a Service named `argocd-server`, so webhooks made for Argo CD keep working.
 

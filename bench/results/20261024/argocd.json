@@ -1,0 +1,101 @@
+{
+  "target": "argocd",
+  "started": "2026-10-24T08:36:06",
+  "cluster": "v1.33.0+litek8s",
+  "install_seconds": 28.7,
+  "idle_no_apps": {
+    "containers": {
+      "argocd-application-controller-0/application-controller": {
+        "working_set_mib": 44.1,
+        "anon_mib": 39.4,
+        "cpu_percent": 0.037
+      },
+      "argocd-applicationset-controller-8447fdf97b-nsvw5/applicationset-controller": {
+        "working_set_mib": 43.6,
+        "anon_mib": 36.7,
+        "cpu_percent": 0.029
+      },
+      "argocd-redis-66f6996d69-9cn5j/redis": {
+        "working_set_mib": 13.2,
+        "anon_mib": 11.0,
+        "cpu_percent": 0.107
+      },
+      "argocd-repo-server-77b577b85c-9js4q/repo-server": {
+        "working_set_mib": 34.9,
+        "anon_mib": 30.7,
+        "cpu_percent": 0.039
+      },
+      "argocd-server-6cdd586d4c-dl7nd/server": {
+        "working_set_mib": 58.4,
+        "anon_mib": 51.6,
+        "cpu_percent": 0.028
+      }
+    },
+    "total": {
+      "working_set_mib": 194.2,
+      "anon_mib": 169.4,
+      "cpu_percent": 0.24
+    }
+  },
+  "first": [
+    1.1,
+    0.46,
+    0.46
+  ],
+  "change": [
+    0.39,
+    0.39,
+    0.39
+  ],
+  "drift": [
+    0.43,
+    0.44,
+    0.43
+  ],
+  "burst": {
+    "seconds": 5.72,
+    "apps": 19,
+    "peak_working_set_mib": 325.5,
+    "peak_by_container_mib": {
+      "argocd-application-controller-0/application-controller": 170.4,
+      "argocd-applicationset-controller-8447fdf97b-nsvw5/applicationset-controller": 46.3,
+      "argocd-redis-66f6996d69-9cn5j/redis": 13.8,
+      "argocd-repo-server-77b577b85c-9js4q/repo-server": 49.4,
+      "argocd-server-6cdd586d4c-dl7nd/server": 45.6
+    }
+  },
+  "idle_20_apps": {
+    "containers": {
+      "argocd-application-controller-0/application-controller": {
+        "working_set_mib": 161.4,
+        "anon_mib": 114.0,
+        "cpu_percent": 0.159
+      },
+      "argocd-applicationset-controller-8447fdf97b-nsvw5/applicationset-controller": {
+        "working_set_mib": 45.7,
+        "anon_mib": 35.8,
+        "cpu_percent": 0.032
+      },
+      "argocd-redis-66f6996d69-9cn5j/redis": {
+        "working_set_mib": 12.3,
+        "anon_mib": 11.1,
+        "cpu_percent": 0.115
+      },
+      "argocd-repo-server-77b577b85c-9js4q/repo-server": {
+        "working_set_mib": 46.2,
+        "anon_mib": 31.7,
+        "cpu_percent": 0.047
+      },
+      "argocd-server-6cdd586d4c-dl7nd/server": {
+        "working_set_mib": 44.6,
+        "anon_mib": 32.4,
+        "cpu_percent": 0.029
+      }
+    },
+    "total": {
+      "working_set_mib": 310.2,
+      "anon_mib": 225.0,
+      "cpu_percent": 0.382
+    }
+  }
+}

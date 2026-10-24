@@ -1,0 +1,57 @@
+{
+  "target": "litecd",
+  "started": "2026-10-24T08:27:45",
+  "cluster": "v1.33.0+litek8s",
+  "install_seconds": 0.6,
+  "idle_no_apps": {
+    "containers": {
+      "litecd-5dfbd8b88f-4gs6b/litecd": {
+        "working_set_mib": 2.2,
+        "anon_mib": 1.2,
+        "cpu_percent": 0.004
+      }
+    },
+    "total": {
+      "working_set_mib": 2.2,
+      "anon_mib": 1.2,
+      "cpu_percent": 0.004
+    }
+  },
+  "first": [
+    2.86,
+    0.45,
+    0.46
+  ],
+  "change": [
+    0.39,
+    0.68,
+    0.68
+  ],
+  "drift": [
+    0.77,
+    0.77,
+    0.77
+  ],
+  "burst": {
+    "seconds": 3.28,
+    "apps": 19,
+    "peak_working_set_mib": 9.4,
+    "peak_by_container_mib": {
+      "litecd-5dfbd8b88f-4gs6b/litecd": 9.4
+    }
+  },
+  "idle_20_apps": {
+    "containers": {
+      "litecd-5dfbd8b88f-4gs6b/litecd": {
+        "working_set_mib": 6.9,
+        "anon_mib": 4.1,
+        "cpu_percent": 0.147
+      }
+    },
+    "total": {
+      "working_set_mib": 6.9,
+      "anon_mib": 4.1,
+      "cpu_percent": 0.147
+    }
+  }
+}
