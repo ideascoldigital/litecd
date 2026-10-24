@@ -95,6 +95,64 @@ impl Kube {
         Ok(k)
     }
 
+    /// A client for another cluster, from an Argo CD cluster Secret: its
+    /// server and `config` (bearerToken, username/password,
+    /// tlsClientConfig with insecure, caData, certData, keyData, serverName).
+    pub async fn remote(server: &str, config: &Value) -> Result<Self> {
+        use base64::Engine;
+        let b64 = |v: &Value| -> Result<Option<Vec<u8>>> {
+            v.as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    base64::engine::general_purpose::STANDARD
+                        .decode(s)
+                        .context("base64")
+                })
+                .transpose()
+        };
+        let mut c = kube::Config::new(
+            server
+                .parse()
+                .with_context(|| format!("cluster server {server}"))?,
+        );
+        let tls = &config["tlsClientConfig"];
+        c.accept_invalid_certs = tls["insecure"].as_bool().unwrap_or(false);
+        if let Some(name) = tls["serverName"].as_str().filter(|s| !s.is_empty()) {
+            c.tls_server_name = Some(name.to_string());
+        }
+        if let Some(pem) = b64(&tls["caData"])? {
+            c.root_cert = Some(pem_certs(&pem));
+        }
+        if let Some(cert) = b64(&tls["certData"])? {
+            c.auth_info.client_certificate_data =
+                Some(base64::engine::general_purpose::STANDARD.encode(cert));
+        }
+        if let Some(key) = b64(&tls["keyData"])? {
+            c.auth_info.client_key_data =
+                Some(base64::engine::general_purpose::STANDARD.encode(key).into());
+        }
+        if let Some(t) = config["bearerToken"].as_str().filter(|s| !s.is_empty()) {
+            c.auth_info.token = Some(secrecy::SecretString::from(t.to_string()));
+        }
+        if let Some(u) = config["username"].as_str().filter(|s| !s.is_empty()) {
+            c.auth_info.username = Some(u.to_string());
+            c.auth_info.password = config["password"]
+                .as_str()
+                .map(|p| secrecy::SecretString::from(p.to_string()));
+        }
+        let client = Client::try_from(c).with_context(|| format!("client for {server}"))?;
+        let k = Kube {
+            client,
+            kinds: Arc::default(),
+            api_versions: Arc::default(),
+            server_version: Arc::default(),
+        };
+        k.rediscover()
+            .await
+            .with_context(|| format!("cluster {server}"))?;
+        Ok(k)
+    }
+
     /// Reload discovery: after a CRD is created, say.
     pub async fn rediscover(&self) -> Result<()> {
         let d = Discovery::new(self.client.clone())
@@ -342,6 +400,29 @@ impl Kube {
             Err(e) => Err(e),
         }
     }
+}
+
+/// The DER certificates of a PEM bundle.
+fn pem_certs(pem: &[u8]) -> Vec<Vec<u8>> {
+    use base64::Engine;
+    let text = String::from_utf8_lossy(pem);
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut inside = false;
+    for line in text.lines() {
+        if line.starts_with("-----BEGIN CERTIFICATE") {
+            inside = true;
+            cur.clear();
+        } else if line.starts_with("-----END CERTIFICATE") {
+            inside = false;
+            if let Ok(der) = base64::engine::general_purpose::STANDARD.decode(cur.trim()) {
+                out.push(der);
+            }
+        } else if inside {
+            cur.push_str(line.trim());
+        }
+    }
+    out
 }
 
 /// The field manager Argo CD uses, so ownership carries over between the two.

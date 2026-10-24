@@ -18,8 +18,9 @@ and argocd-cm), Kustomize options, jsonnet, shared-resource detection
 CD's own Lua library of them and Lua ones from argocd-cm, and the
 app-of-apps pattern, and writes the same `.status` Argo CD does. Its
 ApplicationSet controller has the list, clusters, git (directories and
-files), matrix and merge generators, fasttemplate and goTemplate. It passes
-all 33 cases of the compatibility corpus
+files), matrix and merge generators, fasttemplate and goTemplate; and
+destinations in other clusters come from Argo CD's cluster Secrets. It
+passes all 36 cases of the compatibility corpus
 ([compat/](compat/)), whose expected results come from Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
 
 On litek8s the controller process takes 8–9 MiB of RSS through the whole

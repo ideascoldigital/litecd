@@ -75,13 +75,18 @@ impl Controller {
     }
 
     /// Watch a kind the apps manage: its changes wake the owning app.
-    pub async fn watch_kind(self: &Arc<Self>, kind: &Kind) {
-        let id = format!("{}/{}", kind.api_version(), kind.kind);
+    /// Watch a kind the apps manage, in the cluster `kube` talks to.
+    pub async fn watch_kind(
+        self: &Arc<Self>,
+        kube: &crate::kubeapi::Kube,
+        server: &str,
+        kind: &Kind,
+    ) {
+        let id = format!("{server}|{}/{}", kind.api_version(), kind.kind);
         if !self.watched.lock().await.insert(id.clone()) {
             return;
         }
-        let api: Api<DynamicObject> =
-            Api::all_with(self.ctx.kube.client.clone(), &kind.api_resource());
+        let api: Api<DynamicObject> = Api::all_with(kube.client.clone(), &kind.api_resource());
         let me = self.clone();
         tokio::spawn(async move {
             let mut stream = watcher::watcher(api, watcher::Config::default()).boxed();
@@ -485,9 +490,15 @@ impl AppTask {
         let extra = refresh.map(|_| json!({"metadata": {"annotations": {REFRESH: null}}}));
         let app = self.write_status(&app, &status, extra).await?;
         if let Ok(c) = &cmp {
+            let server = self
+                .ctx()
+                .target(&app["spec"]["destination"])
+                .await
+                .map(|t| t.1)
+                .unwrap_or_default();
             for r in &c.desired {
                 if let Some(k) = &r.kind {
-                    self.c.watch_kind(k).await;
+                    self.c.watch_kind(&c.kube, &server, k).await;
                 }
             }
         }
@@ -509,13 +520,33 @@ impl AppTask {
         }
     }
 
+    /// A comparison at given revisions against the app's destination.
+    async fn target_compare(
+        &self,
+        app: &Value,
+        src: &Sources,
+        revs: &[String],
+    ) -> Result<Comparison, CompareError> {
+        let (kube, _) = self
+            .ctx()
+            .target(&app["spec"]["destination"])
+            .await
+            .map_err(CompareError::InvalidSpec)?;
+        app::compare(self.ctx(), &kube, app, src, revs, false).await
+    }
+
     async fn compare(
         &self,
         app: &Value,
         fresh: bool,
         hard: bool,
     ) -> (Result<Comparison, CompareError>, Vec<String>) {
-        if let Err(e) = app::check_project(self.ctx(), app).await {
+        // The destination cluster first: a project checks its server.
+        let (kube, server) = match self.ctx().target(&app["spec"]["destination"]).await {
+            Ok(t) => t,
+            Err(m) => return (Err(CompareError::InvalidSpec(m)), Vec::new()),
+        };
+        if let Err(e) = app::check_project(self.ctx(), app, &server).await {
             return (Err(e), Vec::new());
         }
         let src = Sources::of_app(app);
@@ -524,7 +555,7 @@ impl AppTask {
             Err(e) => return (Err(CompareError::Comparison(format!("{e:#}"))), Vec::new()),
         };
         (
-            app::compare(self.ctx(), app, &src, &revisions, hard).await,
+            app::compare(self.ctx(), &kube, app, &src, &revisions, hard).await,
             revisions,
         )
     }
@@ -669,7 +700,7 @@ impl AppTask {
             };
             let attempt = match revision {
                 Err(e) => Err((format!("{e:#}"), vec![], Vec::new())),
-                Ok(rev) => match app::compare(self.ctx(), &app, &src, &rev, false).await {
+                Ok(rev) => match self.target_compare(&app, &src, &rev).await {
                     Err(CompareError::Comparison(m) | CompareError::InvalidSpec(m)) => {
                         Err((m, vec![], rev))
                     }
@@ -816,6 +847,12 @@ impl AppTask {
             "Foreground"
         };
         let settings = self.ctx().settings.read().await.clone();
+        // What it manages lives in its destination cluster; a destination
+        // no cluster matches has nothing to delete.
+        let kube = match self.ctx().target(&app["spec"]["destination"]).await {
+            Ok((k, _)) => k,
+            Err(_) => self.ctx().kube.clone(),
+        };
         let mut remaining = 0;
         for r in app["status"]["resources"].as_array().into_iter().flatten() {
             let group = r["group"].as_str().unwrap_or_default();
@@ -825,9 +862,7 @@ impl AppTask {
             } else {
                 format!("{group}/{version}")
             };
-            let Ok(kind) = self
-                .ctx()
-                .kube
+            let Ok(kind) = kube
                 .kind(&api, r["kind"].as_str().unwrap_or_default())
                 .await
             else {
@@ -835,7 +870,7 @@ impl AppTask {
             };
             let ns = r["namespace"].as_str().filter(|n| !n.is_empty());
             let name = r["name"].as_str().unwrap_or_default();
-            let Ok(Some(live)) = self.ctx().kube.get(&kind, ns, name).await else {
+            let Ok(Some(live)) = kube.get(&kind, ns, name).await else {
                 continue;
             };
             if app::owner(&live, &settings).as_deref() != Some(self.name.as_str()) {
@@ -843,7 +878,7 @@ impl AppTask {
             }
             remaining += 1;
             if live["metadata"]["deletionTimestamp"].is_null() {
-                let _ = self.ctx().kube.delete(&kind, ns, name, propagation).await;
+                let _ = kube.delete(&kind, ns, name, propagation).await;
             }
         }
         if remaining > 0 {

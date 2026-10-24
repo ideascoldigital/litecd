@@ -37,6 +37,10 @@ the snapshots of every case), not committed.
   `operation`, as the CLI and UI start a sync), `app_refresh`, `wait_app`,
   `wait_rev`, `wait_op`, and `snapshot <label> <app>...`.
 
+`cluster_secret <name> <server>` (lib.sh) registers this same cluster under
+another URL with a ServiceAccount token: Argo CD tells clusters apart by
+URL, so that is the whole remote-cluster path without a second cluster.
+
 `snapshot --appset <name>` records an ApplicationSet too: its conditions,
 the Applications its status lists, and for each Application it owns the
 spec, labels, annotations, finalizers and owner the template gave it, with
@@ -104,6 +108,9 @@ so litecd is compared on the same kind of cluster.
 | appset_matrix | 3 | git directories times a list |
 | appset_merge | 3 | a list overriding another by `mergeKeys` |
 | appset_go_template | 3 | goTemplate: pipelines, printf, if/else, `missingkey=error` |
+| cluster_secret_destination | 3 | a cluster Secret's destination, by name and by server |
+| cluster_unknown_destination | 3 | a destination no cluster matches: Argo CD's InvalidSpecError, by name and by server |
+| appset_clusters_secret | 3 | clusters generator with a selector: the labelled Secret, not in-cluster |
 
 ## litecd
 

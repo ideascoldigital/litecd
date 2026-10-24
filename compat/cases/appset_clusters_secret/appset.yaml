@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters-secret
+spec:
+  generators:
+    - clusters:
+        selector:
+          matchLabels: {env: staging}
+  template:
+    metadata:
+      name: 'cs-{{name}}'
+      labels: {compat.litecd.dev/case: <CASE>}
+      annotations: {compat-server: '{{server}}', compat-env: '{{metadata.labels.env}}'}
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+    spec:
+      project: default
+      source: {repoURL: <REPO_URL>, targetRevision: main, path: apps/c}
+      destination: {server: '{{server}}', namespace: <NS>}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

@@ -61,7 +61,7 @@ One binary, one Deployment (one replica; a Lease when there are more).
 | Tracking | annotation `argocd.argoproj.io/tracking-id` (Argo CD v3 default) or label `app.kubernetes.io/instance`, from `argocd-cm` `application.resourceTrackingMethod` | resources synced by Argo CD stay owned after the switch |
 | Health | built in: Deployment, StatefulSet, DaemonSet, ReplicaSet, Pod, Job, PVC, Service, Ingress, APIService, HPA, Application | Lua: `resource.customizations.health.*` in `argocd-cm` and Argo CD's `resource_customizations` library vendored (Apache-2.0, NOTICE), on Lua 5.1 (`mlua`), as gopher-lua is 5.1 |
 | Projects | `sourceRepos`, `destinations`, cluster/namespace resource allow and deny lists | sync windows in phase 3 |
-| Clusters | in-cluster; Secrets `argocd.argoproj.io/secret-type=cluster` (bearer token, TLS) in phase 3 | |
+| Clusters | in-cluster; Secrets `argocd.argoproj.io/secret-type=cluster` (bearer token, username/password, TLS: insecure, caData, certData/keyData, serverName), a client per server cached by the Secret's resourceVersion | the destination is resolved before the project check, which sees its server |
 | Coexistence | litecd acts on nothing while an Argo CD application controller runs in the cluster (its StatefulSet, Ready), unless an Application carries `litecd.dev/manage: "true"` | moving over: uninstall Argo CD's workloads, keep its CRDs |
 
 ## Phases
@@ -91,8 +91,10 @@ One binary, one Deployment (one replica; a Lease when there are more).
    conditions, word for word.
 3. **ApplicationSet** (list, git directories/files, clusters, matrix, merge;
    fasttemplate and goTemplate with sprig's common functions: done
-   2026-10-24, 7 corpus cases), other clusters, apps in any namespace, sync
-   windows; a bench phase against Argo CD on litek8s and k3s.
+   2026-10-24, 7 corpus cases), other clusters (cluster Secrets: bearer
+   token, TLS, by name or server, the clusters generator's selector: done
+   2026-10-24, 3 cases), apps in any namespace, sync windows; a bench phase
+   against Argo CD on litek8s and k3s.
 4. **UX:** an Applications view (tree, diff, sync) in `litek8s ui` and MCP
    tools, both through the Kubernetes API only; the `argocd` CLI's gRPC API if
    people ask for it.

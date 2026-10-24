@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::app::{self, Comparison, Ctx, Desired, Key, ResourceState};
 use crate::health::Status;
-use crate::kubeapi::{ApiError, Kind};
+use crate::kubeapi::{ApiError, Kind, Kube};
 
 /// Pause between waves (Argo CD's ARGOCD_SYNC_WAVE_DELAY).
 pub const WAVE_DELAY: Duration = Duration::from_secs(2);
@@ -205,6 +205,8 @@ pub async fn run(
     req: &Request,
     progress: &mut impl Progress,
 ) -> Result<Done, Failed> {
+    // The destination cluster's API; Applications and settings stay on ctx.
+    let kube = &cmp.kube;
     let mut results = Vec::new();
     let dest_ns = app::destination_namespace(app_obj);
 
@@ -221,9 +223,9 @@ pub async fn run(
 
     // CreateNamespace=true: the destination namespace first.
     if req.has("CreateNamespace=true") && !dest_ns.is_empty() {
-        let ns_kind = ctx.kube.known("v1", "Namespace").await;
+        let ns_kind = kube.known("v1", "Namespace").await;
         if let Some(k) = ns_kind {
-            match ctx.kube.get(&k, None, &dest_ns).await {
+            match kube.get(&k, None, &dest_ns).await {
                 Ok(Some(_)) => {}
                 Ok(None) => {
                     let mut ns = json!({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": dest_ns}});
@@ -238,7 +240,7 @@ pub async fn run(
                         namespace: String::new(),
                         name: dest_ns.clone(),
                     };
-                    match ctx.kube.create(&k, None, &ns, false).await {
+                    match kube.create(&k, None, &ns, false).await {
                         Ok(_) => results.push(TaskResult {
                             key,
                             version: "v1".into(),
@@ -318,7 +320,7 @@ pub async fn run(
         })
     };
     let mut dry_failures = Vec::new();
-    let ns_kind = ctx.kube.known("v1", "Namespace").await;
+    let ns_kind = kube.known("v1", "Namespace").await;
     let mut checked_ns = BTreeSet::new();
     let hooks: Vec<&Desired> = cmp.desired.iter().filter(|d| d.hook.is_some()).collect();
     let applies = tasks.iter().filter_map(|t| match t {
@@ -348,7 +350,7 @@ pub async fn run(
             let exists = if checked_ns.contains(&d.key.namespace) {
                 true
             } else {
-                matches!(ctx.kube.get(nk, None, &d.key.namespace).await, Ok(Some(_)))
+                matches!(kube.get(nk, None, &d.key.namespace).await, Ok(Some(_)))
             };
             if exists {
                 checked_ns.insert(d.key.namespace.clone());
@@ -398,7 +400,16 @@ pub async fn run(
         // PreSync hooks, each to its end.
         let pre = phase_hooks("PreSync");
         if !pre.is_empty() {
-            run_hooks(ctx, &pre, "PreSync", &mut results, &mut created, progress).await?;
+            run_hooks(
+                ctx,
+                kube,
+                &pre,
+                "PreSync",
+                &mut results,
+                &mut created,
+                progress,
+            )
+            .await?;
             waited_last = true;
         }
         // Sync: the resources in waves, with the Sync hooks of each wave.
@@ -421,7 +432,7 @@ pub async fn run(
                     Task::Apply(_, Some(state))
                         if req.has("ApplyOutOfSyncOnly=true") && state.synced => {}
                     Task::Apply(d, state) => {
-                        let r = apply(ctx, d, *state, req).await;
+                        let r = apply(kube, d, *state, req).await;
                         if r.status == "SyncFailed" && failed.is_none() {
                             failed = Some(r.message.clone());
                         }
@@ -431,7 +442,7 @@ pub async fn run(
                         results.push(r);
                     }
                     Task::Prune(r) | Task::PruneLast(r) => {
-                        let res = prune(ctx, r, req).await;
+                        let res = prune(kube, r, req).await;
                         if res.status == "SyncFailed" && failed.is_none() {
                             failed = Some(res.message.clone());
                         }
@@ -452,6 +463,7 @@ pub async fn run(
             if !wave_hooks.is_empty() {
                 run_hooks(
                     ctx,
+                    kube,
                     &wave_hooks,
                     "Sync",
                     &mut results,
@@ -463,7 +475,7 @@ pub async fn run(
             }
             all_applied.extend(applied.iter().copied());
             if i + 1 < waves.len() {
-                if !wait_healthy(ctx, &applied, &results, progress).await {
+                if !wait_healthy(ctx, kube, &applied, &results, progress).await {
                     return Err(TERMINATED.to_string());
                 }
                 tokio::time::sleep(WAVE_DELAY).await;
@@ -472,10 +484,19 @@ pub async fn run(
         // PostSync hooks once everything synced is healthy.
         let post = phase_hooks("PostSync");
         if !post.is_empty() {
-            if !wait_healthy(ctx, &all_applied, &results, progress).await {
+            if !wait_healthy(ctx, kube, &all_applied, &results, progress).await {
                 return Err(TERMINATED.to_string());
             }
-            run_hooks(ctx, &post, "PostSync", &mut results, &mut created, progress).await?;
+            run_hooks(
+                ctx,
+                kube,
+                &post,
+                "PostSync",
+                &mut results,
+                &mut created,
+                progress,
+            )
+            .await?;
             waited_last = true;
         }
         Ok(())
@@ -483,7 +504,7 @@ pub async fn run(
     .await;
     match outcome {
         Ok(()) => {
-            cleanup_hooks(ctx, &created, true).await;
+            cleanup_hooks(kube, &created, true).await;
             Ok(Done {
                 results,
                 no_more_tasks: waited_last,
@@ -493,11 +514,19 @@ pub async fn run(
             if message != TERMINATED {
                 let fail = phase_hooks("SyncFail");
                 if !fail.is_empty() {
-                    let _ = run_hooks(ctx, &fail, "SyncFail", &mut results, &mut created, progress)
-                        .await;
+                    let _ = run_hooks(
+                        ctx,
+                        kube,
+                        &fail,
+                        "SyncFail",
+                        &mut results,
+                        &mut created,
+                        progress,
+                    )
+                    .await;
                 }
             }
-            cleanup_hooks(ctx, &created, false).await;
+            cleanup_hooks(kube, &created, false).await;
             Err(Failed { message, results })
         }
     }
@@ -523,6 +552,7 @@ struct Hook {
 /// succeeded; degraded: it failed). Err: why the phase failed.
 async fn run_hooks(
     ctx: &Ctx,
+    kube: &Kube,
     hooks: &[&Desired],
     phase: &'static str,
     results: &mut Vec<TaskResult>,
@@ -543,8 +573,7 @@ async fn run_hooks(
         };
         let kind = match &d.kind {
             Some(k) => k.clone(),
-            None => match ctx
-                .kube
+            None => match kube
                 .kind(
                     d.obj["apiVersion"].as_str().unwrap_or_default(),
                     &d.key.kind,
@@ -571,15 +600,15 @@ async fn run_hooks(
             d.delete_policies.clone()
         };
         if !d.key.name.is_empty() && policies.iter().any(|p| p == "BeforeHookCreation") {
-            let _ = ctx.kube.delete(&kind, ns, &d.key.name, "Foreground").await;
+            let _ = kube.delete(&kind, ns, &d.key.name, "Foreground").await;
             for _ in 0..120 {
-                if !matches!(ctx.kube.get(&kind, ns, &d.key.name).await, Ok(Some(_))) {
+                if !matches!(kube.get(&kind, ns, &d.key.name).await, Ok(Some(_))) {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
-        let name = match ctx.kube.create(&kind, ns, &d.obj, false).await {
+        let name = match kube.create(&kind, ns, &d.obj, false).await {
             Ok(obj) => obj["metadata"]["name"]
                 .as_str()
                 .unwrap_or_default()
@@ -625,7 +654,7 @@ async fn run_hooks(
         for i in pending {
             let (ri, ci, kind, ns, name) = &started[i];
             let nsr = (!ns.is_empty()).then_some(ns.as_str());
-            let live = ctx.kube.get(kind, nsr, name).await.ok().flatten();
+            let live = kube.get(kind, nsr, name).await.ok().flatten();
             let done = match &live {
                 // Gone already (a TTL, say): it ran.
                 None => Some((true, String::new())),
@@ -673,13 +702,13 @@ async fn run_hooks(
 }
 
 /// Delete the hooks whose policy asks for it.
-async fn cleanup_hooks(ctx: &Ctx, created: &[Hook], _sync_ok: bool) {
+async fn cleanup_hooks(kube: &Kube, created: &[Hook], _sync_ok: bool) {
     for h in created {
         let delete = (h.succeeded && h.policies.iter().any(|p| p == "HookSucceeded"))
             || (!h.succeeded && h.policies.iter().any(|p| p == "HookFailed"));
         if delete {
             let ns = (!h.namespace.is_empty()).then_some(h.namespace.as_str());
-            let _ = ctx.kube.delete(&h.kind, ns, &h.name, "Background").await;
+            let _ = kube.delete(&h.kind, ns, &h.name, "Background").await;
         }
     }
 }
@@ -701,7 +730,12 @@ fn workload_images(obj: &Value) -> Vec<String> {
         .collect()
 }
 
-async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Request) -> TaskResult {
+async fn apply(
+    kube: &Kube,
+    d: &Desired,
+    state: Option<&ResourceState>,
+    req: &Request,
+) -> TaskResult {
     let mut r = TaskResult {
         key: d.key.clone(),
         version: d.version.clone(),
@@ -714,8 +748,7 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
     };
     let kind: Kind = match &d.kind {
         Some(k) => k.clone(),
-        None => match ctx
-            .kube
+        None => match kube
             .kind(
                 d.obj["apiVersion"].as_str().unwrap_or_default(),
                 &d.key.kind,
@@ -753,20 +786,17 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
             Some(l) => {
                 let mut o = d.obj.clone();
                 o["metadata"]["resourceVersion"] = l["metadata"]["resourceVersion"].clone();
-                ctx.kube
-                    .replace(&kind, ns, &d.key.name, &o)
+                kube.replace(&kind, ns, &d.key.name, &o)
                     .await
                     .map(|_| format!("{what} replaced"))
             }
-            None => ctx
-                .kube
+            None => kube
                 .create(&kind, ns, &d.obj, false)
                 .await
                 .map(|_| format!("{what} created")),
         }
     } else if ssa {
-        ctx.kube
-            .apply(&kind, ns, &d.key.name, &d.obj, false)
+        kube.apply(&kind, ns, &d.key.name, &d.obj, false)
             .await
             .map(|_| format!("{what} serverside-applied"))
     } else if live.is_some() && state.is_some_and(|s| s.synced) {
@@ -779,8 +809,7 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
         } else {
             "configured"
         };
-        ctx.kube
-            .apply(&kind, ns, &d.key.name, &obj, false)
+        kube.apply(&kind, ns, &d.key.name, &obj, false)
             .await
             .map(|_| format!("{what} {verb}"))
     };
@@ -795,7 +824,7 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
     r
 }
 
-async fn prune(ctx: &Ctx, s: &ResourceState, req: &Request) -> TaskResult {
+async fn prune(kube: &Kube, s: &ResourceState, req: &Request) -> TaskResult {
     let live = s.live.as_ref();
     let mut r = TaskResult {
         key: s.key.clone(),
@@ -831,10 +860,10 @@ async fn prune(ctx: &Ctx, s: &ResourceState, req: &Request) -> TaskResult {
             _ => "Foreground",
         })
         .unwrap_or("Foreground");
-    let res = match ctx.kube.kind(&api, &s.key.kind).await {
+    let res = match kube.kind(&api, &s.key.kind).await {
         Ok(k) => {
             let ns = (!s.key.namespace.is_empty()).then_some(s.key.namespace.as_str());
-            ctx.kube.delete(&k, ns, &s.key.name, propagation).await
+            kube.delete(&k, ns, &s.key.name, propagation).await
         }
         Err(e) => Err(e),
     };
@@ -856,6 +885,7 @@ async fn prune(ctx: &Ctx, s: &ResourceState, req: &Request) -> TaskResult {
 /// healthy), reporting what it waits for.
 async fn wait_healthy(
     ctx: &Ctx,
+    kube: &Kube,
     applied: &[&Desired],
     results: &[TaskResult],
     progress: &mut impl Progress,
@@ -864,7 +894,7 @@ async fn wait_healthy(
         let custom = ctx.settings.read().await.health.clone();
         let mut waiting = None;
         for d in applied {
-            let live = app::live_of(ctx, d).await.ok().flatten();
+            let live = app::live_of(kube, d).await.ok().flatten();
             let ok = match &live {
                 None => false,
                 Some(l) => match crate::health::assess(l, &custom) {

@@ -1,0 +1,51 @@
+[
+  {
+    "apps": {
+      "unknown-by-name": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {},
+        "operation": null,
+        "status": {
+          "conditions": [
+            {
+              "message": "there are no clusters with this name: nowhere",
+              "type": "InvalidSpecError"
+            }
+          ],
+          "health": {
+            "status": "Unknown"
+          },
+          "sync": {
+            "status": "Unknown"
+          }
+        }
+      },
+      "unknown-by-server": {
+        "annotations": {},
+        "finalizers": [
+          "resources-finalizer.argocd.argoproj.io"
+        ],
+        "objects": {},
+        "operation": null,
+        "status": {
+          "conditions": [
+            {
+              "message": "error getting cluster by server \"https://nowhere.example.com\": rpc error: code = NotFound desc = cluster \"https://nowhere.example.com\" not found",
+              "type": "InvalidSpecError"
+            }
+          ],
+          "health": {
+            "status": "Unknown"
+          },
+          "sync": {
+            "status": "Unknown"
+          }
+        }
+      }
+    },
+    "label": "rejected"
+  }
+]

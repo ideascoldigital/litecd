@@ -136,6 +136,8 @@ pub struct Ctx {
     /// Server-side dry runs that found a live object in sync: (live
     /// resourceVersion, desired) → in sync.
     dry_runs: Mutex<HashMap<(String, String), bool>>,
+    /// Clients of the other clusters, by server and Secret resourceVersion.
+    clusters: Mutex<HashMap<String, (String, Kube)>>,
 }
 
 pub struct Rendered {
@@ -152,7 +154,79 @@ impl Ctx {
             settings: RwLock::new(settings),
             manifests: Mutex::default(),
             dry_runs: Mutex::default(),
+            clusters: Mutex::default(),
         }
+    }
+
+    /// The cluster a destination names (by server, or by name through the
+    /// cluster Secrets) and its server URL; Err: Argo CD's words for why not.
+    pub async fn target(&self, dest: &Value) -> Result<(Kube, String), String> {
+        let server = dest["server"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_end_matches('/').to_string());
+        let name = dest["name"].as_str().filter(|s| !s.is_empty());
+        let secrets = match self.kube.known("v1", "Secret").await {
+            Some(k) => self
+                .kube
+                .list(
+                    &k,
+                    Some(&self.namespace),
+                    Some("argocd.argoproj.io/secret-type=cluster"),
+                )
+                .await
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let decode = |s: &Value, k: &str| -> String {
+            use base64::Engine;
+            s["data"][k]
+                .as_str()
+                .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string())
+                .unwrap_or_default()
+        };
+        let found = match (&server, name) {
+            (Some(srv), _) => secrets
+                .iter()
+                .find(|s| decode(s, "server").trim_end_matches('/') == srv),
+            (None, Some(n)) => secrets.iter().find(|s| decode(s, "name") == n),
+            (None, None) => None,
+        };
+        let Some(secret) = found else {
+            return match (server, name) {
+                (Some(s), _) if s == IN_CLUSTER => Ok((self.kube.clone(), IN_CLUSTER.into())),
+                (None, Some("in-cluster")) | (None, None) => {
+                    Ok((self.kube.clone(), IN_CLUSTER.into()))
+                }
+                (Some(s), _) => Err(format!(
+                    "error getting cluster by server {s:?}: rpc error: code = NotFound desc = cluster {s:?} not found"
+                )),
+                (None, Some(n)) => Err(format!("there are no clusters with this name: {n}")),
+            };
+        };
+        let srv = decode(secret, "server").trim_end_matches('/').to_string();
+        if srv == IN_CLUSTER && decode(secret, "config").trim().is_empty() {
+            return Ok((self.kube.clone(), srv));
+        }
+        let rv = secret["metadata"]["resourceVersion"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if let Some((cached_rv, k)) = self.clusters.lock().await.get(&srv)
+            && *cached_rv == rv
+        {
+            return Ok((k.clone(), srv));
+        }
+        let config: Value = serde_json::from_str(&decode(secret, "config")).unwrap_or(Value::Null);
+        let k = Kube::remote(&srv, &config)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        self.clusters
+            .lock()
+            .await
+            .insert(srv.clone(), (rv, k.clone()));
+        Ok((k, srv))
     }
 }
 
@@ -408,6 +482,8 @@ pub fn is_ref_only(source: &Value) -> bool {
 
 /// The result of comparing an app with the cluster.
 pub struct Comparison {
+    /// The destination cluster's API.
+    pub kube: Kube,
     pub revisions: Vec<String>,
     /// Per source; "" for a ref-only one.
     pub source_types: Vec<String>,
@@ -518,6 +594,7 @@ pub async fn resolve(ctx: &Ctx, source: &Value, fresh: bool) -> Result<String> {
 /// others' `$<ref>/...` value files.
 pub async fn render(
     ctx: &Ctx,
+    kube: &Kube,
     app: &Value,
     sources: &Sources,
     revisions: &[String],
@@ -551,7 +628,7 @@ pub async fn render(
             out.source_types.push(String::new());
             continue;
         }
-        let (ty, objects) = render_one(ctx, app, s, rev, &refs).await?;
+        let (ty, objects) = render_one(ctx, kube, app, s, rev, &refs).await?;
         out.source_types.push(ty.as_str().to_string());
         out.objects.extend(objects);
     }
@@ -566,6 +643,7 @@ pub async fn render(
 
 async fn render_one(
     ctx: &Ctx,
+    kube: &Kube,
     app: &Value,
     source: &Value,
     revision: &str,
@@ -579,8 +657,8 @@ async fn render_one(
     let cx = render::RenderCtx {
         app_name: name,
         namespace: &ns,
-        kube_version: ctx.kube.server_version().await,
-        api_versions: ctx.kube.api_versions().await,
+        kube_version: kube.server_version().await,
+        api_versions: kube.api_versions().await,
         cache: ctx.repos.cache_dir(),
         kustomize_build_options: settings.kustomize_build_options.clone(),
     };
@@ -616,7 +694,12 @@ async fn render_one(
 }
 
 /// Normalize rendered objects: namespace for namespaced kinds, tracking.
-pub async fn desired_objects(ctx: &Ctx, app: &Value, rendered: &Rendered) -> Vec<Desired> {
+pub async fn desired_objects(
+    ctx: &Ctx,
+    kube: &Kube,
+    app: &Value,
+    rendered: &Rendered,
+) -> Vec<Desired> {
     let name = app["metadata"]["name"].as_str().unwrap_or_default();
     let dest_ns = destination_namespace(app);
     let settings = ctx.settings.read().await;
@@ -629,7 +712,7 @@ pub async fn desired_objects(ctx: &Ctx, app: &Value, rendered: &Rendered) -> Vec
         let mut obj = o.clone();
         let api = obj["apiVersion"].as_str().unwrap_or_default().to_string();
         let kind_name = obj["kind"].as_str().unwrap_or_default().to_string();
-        let kind = ctx.kube.known(&api, &kind_name).await;
+        let kind = kube.known(&api, &kind_name).await;
         if let Some(m) = obj.get_mut("metadata").and_then(Value::as_object_mut) {
             m.remove("creationTimestamp");
             let namespaced = kind.as_ref().map(|k| k.namespaced).unwrap_or(true);
@@ -764,6 +847,7 @@ pub fn with_last_applied(obj: &Value) -> Value {
 /// Whether a live object matches the desired one.
 async fn in_sync(
     ctx: &Ctx,
+    kube: &Kube,
     d: &Desired,
     live: &Value,
     ssa: bool,
@@ -808,11 +892,7 @@ async fn in_sync(
         return *v;
     }
     let ns = (!d.key.namespace.is_empty()).then_some(d.key.namespace.as_str());
-    let result = match ctx
-        .kube
-        .apply(kind, ns, &d.key.name, &candidate, true)
-        .await
-    {
+    let result = match kube.apply(kind, ns, &d.key.name, &candidate, true).await {
         Ok(after) => {
             ignore::without(&diff::strip_volatile(&after), ignored)
                 == ignore::without(&diff::strip_volatile(live), ignored)
@@ -866,7 +946,11 @@ pub fn app_options(op_or_spec_options: &Value) -> Vec<String> {
 
 /// Project rules: the source repository and the destination must be
 /// permitted.
-pub async fn check_project(ctx: &Ctx, app: &Value) -> Result<(), CompareError> {
+pub async fn check_project(
+    ctx: &Ctx,
+    app: &Value,
+    resolved_server: &str,
+) -> Result<(), CompareError> {
     let project = app["spec"]["project"]
         .as_str()
         .filter(|p| !p.is_empty())
@@ -902,7 +986,11 @@ pub async fn check_project(ctx: &Ctx, app: &Value) -> Result<(), CompareError> {
         }
     }
     let dest = &app["spec"]["destination"];
-    let server = dest["server"].as_str().unwrap_or_default();
+    // A destination by name is checked by the server it names too.
+    let server = dest["server"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(resolved_server);
     let dname = dest["name"].as_str().unwrap_or_default();
     let dns = dest["namespace"].as_str().unwrap_or_default();
     let ok = proj["spec"]["destinations"]
@@ -948,21 +1036,21 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
 /// Compare an app with the cluster at `revision`.
 pub async fn compare(
     ctx: &Ctx,
+    kube: &Kube,
     app: &Value,
     sources: &Sources,
     revisions: &[String],
     hard: bool,
 ) -> Result<Comparison, CompareError> {
-    let rendered = render(ctx, app, sources, revisions, hard)
+    let rendered = render(ctx, kube, app, sources, revisions, hard)
         .await
         .map_err(|e| CompareError::Comparison(format!("{e:#}")))?;
-    let mut desired = desired_objects(ctx, app, &rendered).await;
+    let mut desired = desired_objects(ctx, kube, app, &rendered).await;
     // Kinds discovery did not know yet (a CRD of this very app): look again.
     if desired.iter().any(|d| d.kind.is_none()) {
-        let _ = ctx.kube.rediscover().await;
+        let _ = kube.rediscover().await;
         for d in desired.iter_mut().filter(|d| d.kind.is_none()) {
-            d.kind = ctx
-                .kube
+            d.kind = kube
                 .known(
                     d.obj["apiVersion"].as_str().unwrap_or_default(),
                     &d.key.kind,
@@ -985,8 +1073,7 @@ pub async fn compare(
         let live = match &d.kind {
             Some(k) => {
                 let ns = (!d.key.namespace.is_empty()).then_some(d.key.namespace.as_str());
-                ctx.kube
-                    .get(k, ns, &d.key.name)
+                kube.get(k, ns, &d.key.name)
                     .await
                     .map_err(|e| CompareError::Comparison(e.to_string()))?
             }
@@ -1003,7 +1090,7 @@ pub async fn compare(
                         &ignore::without(l, &ignored),
                     )
                 } else {
-                    in_sync(ctx, d, l, ssa, &ignored).await
+                    in_sync(ctx, kube, d, l, ssa, &ignored).await
                 }
             }
             None => false,
@@ -1052,11 +1139,11 @@ pub async fn compare(
         } else {
             format!("{}/{version}", key.group)
         };
-        let Some(kind) = ctx.kube.known(&api, &key.kind).await else {
+        let Some(kind) = kube.known(&api, &key.kind).await else {
             continue;
         };
         let ns = (!key.namespace.is_empty()).then_some(key.namespace.as_str());
-        let Ok(Some(live)) = ctx.kube.get(&kind, ns, &key.name).await else {
+        let Ok(Some(live)) = kube.get(&kind, ns, &key.name).await else {
             continue;
         };
         if owner(&live, &settings).as_deref() != Some(name.as_str()) {
@@ -1110,6 +1197,7 @@ pub async fn compare(
         .iter()
         .any(|r| r.key.group == "argoproj.io" && r.key.kind == "Application");
     Ok(Comparison {
+        kube: kube.clone(),
         revisions: revisions.to_vec(),
         source_types: rendered.source_types.clone(),
         desired,
@@ -1134,12 +1222,12 @@ pub fn ignore_rules(app: &Value, settings: &Settings) -> Vec<ignore::Rule> {
 }
 
 /// The live objects of a set of keys, for waiting on health.
-pub async fn live_of(ctx: &Ctx, d: &Desired) -> Result<Option<Value>> {
+pub async fn live_of(kube: &Kube, d: &Desired) -> Result<Option<Value>> {
     let Some(kind) = &d.kind else {
         return Err(anyhow!("unknown kind {}", d.key.kind));
     };
     let ns = (!d.key.namespace.is_empty()).then_some(d.key.namespace.as_str());
-    ctx.kube.get(kind, ns, &d.key.name).await
+    kube.get(kind, ns, &d.key.name).await
 }
 
 pub fn now() -> String {

@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unknown-by-name
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source: {repoURL: <REPO_URL>, targetRevision: main, path: m}
+  destination: {name: nowhere, namespace: <NS>}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unknown-by-server
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source: {repoURL: <REPO_URL>, targetRevision: main, path: m}
+  destination: {server: 'https://nowhere.example.com', namespace: <NS>}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

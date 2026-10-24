@@ -1141,6 +1141,7 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "mlua",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_yaml",

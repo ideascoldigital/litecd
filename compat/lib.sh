@@ -193,3 +193,26 @@ snapshot() {
     shift
     python3 "$COMPAT_DIR/snapshot.py" ${flags[@]+"${flags[@]}"} --namespace "$ARGOCD_NS" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"
 }
+
+# --- other clusters ---------------------------------------------------------
+
+# cluster_secret <name> <server> [label=value...]: an Argo CD cluster Secret
+# for this same cluster under another URL (Argo CD tells clusters apart by
+# URL), with a ServiceAccount token and TLS verification off: the whole
+# remote-cluster path (Secret, credentials, destination by name or server)
+# without a second cluster.
+cluster_secret() {
+    local name=$1 server=$2
+    shift 2
+    k -n "$ARGOCD_NS" create serviceaccount compat-remote >/dev/null 2>&1 || true
+    k create clusterrolebinding compat-remote --clusterrole=cluster-admin \
+        --serviceaccount="$ARGOCD_NS:compat-remote" >/dev/null 2>&1 || true
+    local token
+    token=$(k -n "$ARGOCD_NS" create token compat-remote --duration 24h)
+    local config
+    config=$(printf '{"bearerToken":"%s","tlsClientConfig":{"insecure":true}}' "$token")
+    k -n "$ARGOCD_NS" create secret generic "cluster-$name" --from-literal=name="$name" \
+        --from-literal=server="$server" --from-literal=config="$config" >/dev/null
+    k -n "$ARGOCD_NS" label secret "cluster-$name" argocd.argoproj.io/secret-type=cluster \
+        compat.litecd.dev/case="$CASE_ID" "$@" >/dev/null
+}
