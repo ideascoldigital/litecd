@@ -86,7 +86,11 @@ fn sources(app: &Value) -> Vec<&Value> {
 async fn refresh_matching(ctx: &Ctx, urls: &[String]) -> Result<usize> {
     let kind = ctx.kube.kind("argoproj.io/v1alpha1", "Application").await?;
     let mut n = 0;
-    for app in ctx.kube.list(&kind, Some(&ctx.namespace), None).await? {
+    for app in ctx.kube.list(&kind, None, None).await? {
+        let app_ns = app["metadata"]["namespace"].as_str().unwrap_or_default();
+        if !ctx.app_namespace_allowed(app_ns).await {
+            continue;
+        }
         let hit = sources(&app).iter().any(|s| {
             s["repoURL"]
                 .as_str()
@@ -99,7 +103,7 @@ async fn refresh_matching(ctx: &Ctx, urls: &[String]) -> Result<usize> {
         let patch = json!({"metadata": {"annotations": {REFRESH: "normal"}}});
         if let Err(e) = ctx
             .kube
-            .merge_patch(&kind, Some(&ctx.namespace), name, &patch)
+            .merge_patch(&kind, Some(app_ns), name, &patch)
             .await
         {
             warn!("webhook: refreshing {name}: {e}");

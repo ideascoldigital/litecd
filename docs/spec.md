@@ -60,7 +60,8 @@ One binary, one Deployment (one replica; a Lease when there are more).
 | Sync | phases PreSync/Sync/PostSync/SyncFail, waves, hooks and `hook-delete-policy`, prune, `.operation`, retry with backoff | sync options in `src/check.rs`; field manager `argocd-controller` so ownership carries over |
 | Tracking | annotation `argocd.argoproj.io/tracking-id` (Argo CD v3 default) or label `app.kubernetes.io/instance`, from `argocd-cm` `application.resourceTrackingMethod` | resources synced by Argo CD stay owned after the switch |
 | Health | built in: Deployment, StatefulSet, DaemonSet, ReplicaSet, Pod, Job, PVC, Service, Ingress, APIService, HPA, Application | Lua: `resource.customizations.health.*` in `argocd-cm` and Argo CD's `resource_customizations` library vendored (Apache-2.0, NOTICE), on Lua 5.1 (`mlua`), as gopher-lua is 5.1 |
-| Projects | `sourceRepos`, `destinations`, cluster/namespace resource allow and deny lists | sync windows in phase 3 |
+| Projects | `sourceRepos`, `destinations`, cluster/namespace resource allow and deny lists, `sourceNamespaces`, sync windows (cron schedule in a time zone, duration, apps/namespaces/clusters with OR or AND, `manualSync`, `syncOverrun`) | a held sync stays Running with Argo CD's message until a refresh finds the window open; like Argo CD, a project change does not refresh its apps |
+| Apps in any namespace | `application.namespaces` in argocd-cmd-params-cm (globs, `/regex/`; `--application-namespaces` when it has none), read live; resources tracked as `<namespace>_<app>` | ApplicationSets stay in the controller's namespace |
 | Clusters | in-cluster; Secrets `argocd.argoproj.io/secret-type=cluster` (bearer token, username/password, TLS: insecure, caData, certData/keyData, serverName), a client per server cached by the Secret's resourceVersion | the destination is resolved before the project check, which sees its server |
 | Coexistence | litecd acts on nothing while an Argo CD application controller runs in the cluster (its StatefulSet, Ready), unless an Application carries `litecd.dev/manage: "true"` | moving over: uninstall Argo CD's workloads, keep its CRDs |
 
@@ -93,8 +94,9 @@ One binary, one Deployment (one replica; a Lease when there are more).
    fasttemplate and goTemplate with sprig's common functions: done
    2026-10-24, 7 corpus cases), other clusters (cluster Secrets: bearer
    token, TLS, by name or server, the clusters generator's selector: done
-   2026-10-24, 3 cases), apps in any namespace, sync windows; a bench phase
-   against Argo CD on litek8s and k3s.
+   2026-10-24, 3 cases), apps in any namespace and sync windows (done
+   2026-10-24, 2 cases); the bench against Argo CD on litek8s
+   (bench/RESULTS.md).
 4. **UX:** an Applications view (tree, diff, sync) in `litek8s ui` and MCP
    tools, both through the Kubernetes API only; the `argocd` CLI's gRPC API if
    people ask for it.

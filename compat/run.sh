@@ -103,12 +103,15 @@ case_cleanup() {
     # ApplicationSets, then Applications (one whose AppProject is gone
     # cannot be finalized).
     k -n "$ARGOCD_NS" delete applicationsets -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
-    k -n "$ARGOCD_NS" delete applications -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
-    if ! wait_for 120 sh -c "[ -z \"\$(kubectl -n $ARGOCD_NS get applications -l compat.litecd.dev/case=$id -o name)\" ]" 2>/dev/null; then
+    # Applications in any namespace (apps_any_namespace's are in its own).
+    k delete applications -A -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
+    if ! wait_for 120 sh -c "[ -z \"\$(kubectl get applications -A -l compat.litecd.dev/case=$id -o name)\" ]" 2>/dev/null; then
         # A controller that never finalizes them must not block the next case.
-        for a in $(kubectl -n "$ARGOCD_NS" get applications -l compat.litecd.dev/case="$id" -o name); do
-            k -n "$ARGOCD_NS" patch "$a" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1
-        done
+        kubectl get applications -A -l compat.litecd.dev/case="$id" \
+            -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' |
+            while read -r n a; do
+                k -n "$n" patch application "$a" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1
+            done
     fi
     k -n "$ARGOCD_NS" delete appprojects,secrets -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
     for n in $(kubectl get namespaces -o name | sed 's#namespace/##' | grep -E "^$ns(-|$)"); do

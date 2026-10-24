@@ -1,0 +1,134 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: denied-auto
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: denied-auto
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: denied-manual
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: denied-manual
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: manual-ok
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: manual-ok
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: closed
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: closed
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: open
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: open
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: by-ns
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: by-ns
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>-b
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: and-match
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: and-match
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: and-miss
+spec:
+  project: compat-windows
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: and-miss
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

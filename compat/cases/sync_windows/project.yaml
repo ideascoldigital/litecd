@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: compat-windows
+spec:
+  sourceRepos: ["*"]
+  destinations:
+    - {server: "*", namespace: "*"}
+  clusterResourceWhitelist:
+    - {group: "", kind: Namespace}
+  syncWindows:
+    # Every minute for an hour: always active.
+    - {kind: deny, schedule: "* * * * *", duration: 1h, applications: [denied-*]}
+    - {kind: deny, schedule: "* * * * *", duration: 1h, applications: [manual-ok], manualSync: true}
+    # January 1st at midnight for a minute: inactive.
+    - {kind: allow, schedule: "0 0 1 1 *", duration: 1m, applications: [closed]}
+    - {kind: allow, schedule: "* * * * *", duration: 1h, applications: [open]}
+    - {kind: deny, schedule: "* * * * *", duration: 1h, namespaces: [<NS>-b]}
+    - {kind: deny, schedule: "* * * * *", duration: 1h, applications: [and-match], clusters: [https://kubernetes.default.svc], andOperator: true}
+    - {kind: deny, schedule: "* * * * *", duration: 1h, applications: [and-miss], namespaces: [nowhere], andOperator: true}

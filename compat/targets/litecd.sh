@@ -8,6 +8,8 @@ target_install() {
     fi
     k create namespace "$ARGOCD_NS" >/dev/null 2>&1 || true
     k apply --server-side --force-conflicts -R -f "$LITECD_MANIFEST" >/dev/null
+    k -n "$ARGOCD_NS" patch configmap argocd-cmd-params-cm --type merge \
+        -p "{\"data\":{\"application.namespaces\":\"$APP_NAMESPACES\"}}" >/dev/null
     with_timeout 300 kubectl -n "$ARGOCD_NS" rollout status deploy/litecd --timeout 5m >/dev/null
 }
 

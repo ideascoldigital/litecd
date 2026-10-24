@@ -1,0 +1,803 @@
+[
+  {
+    "apps": {
+      "and-match": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/and-match": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "and-match",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "and-match",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "and-miss": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/and-miss": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "and-miss:/ConfigMap:<NS>/and-miss",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "and-miss",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+                "source": {
+                  "path": "and-miss",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "and-miss",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "and-miss",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "and-miss",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "Synced"
+          }
+        }
+      },
+      "by-ns": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>-b/by-ns": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "by-ns",
+              "namespace": "<NS>-b",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>-b",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "by-ns",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "closed": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/closed": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "closed",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "closed",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "denied-auto": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/denied-auto": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "denied-auto",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "denied-auto",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "denied-manual": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/denied-manual": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "denied-manual",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "manual-ok": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/manual-ok": {
+            "absent": true
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "manual-ok",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "manual-ok",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "open": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/open": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "open:/ConfigMap:<NS>/open",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "open",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+                "source": {
+                  "path": "open",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "open",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "open",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "open",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "windows"
+  },
+  {
+    "apps": {
+      "denied-manual": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/denied-manual": {
+            "absent": true
+          }
+        },
+        "operation": {
+          "initiatedBy": {
+            "username": "compat"
+          },
+          "sync": {
+            "syncOptions": [
+              "CreateNamespace=true"
+            ],
+            "syncStrategy": {
+              "hook": {}
+            }
+          }
+        },
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Missing"
+          },
+          "operationState": {
+            "message": "Sync operation blocked by sync window",
+            "operation": {
+              "initiatedBy": {
+                "username": "compat"
+              },
+              "retry": {},
+              "sync": {
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ],
+                "syncStrategy": {
+                  "hook": {}
+                }
+              }
+            },
+            "phase": "Running",
+            "syncResult": {
+              "revision": "",
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "denied-manual",
+              "namespace": "<NS>",
+              "status": "OutOfSync",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "OutOfSync"
+          }
+        }
+      },
+      "manual-ok": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/manual-ok": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "manual-ok:/ConfigMap:<NS>/manual-ok",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "username": "compat"
+              },
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "manual-ok",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "username": "compat"
+              },
+              "retry": {},
+              "sync": {
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ],
+                "syncStrategy": {
+                  "hook": {}
+                }
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "manual-ok",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "manual-ok",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "manual-ok",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "manual"
+  },
+  {
+    "apps": {
+      "denied-auto": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/denied-auto": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "denied-auto:/ConfigMap:<NS>/denied-auto",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "automated": true
+              },
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "denied-auto",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "automated": true
+              },
+              "retry": {
+                "limit": 5
+              },
+              "sync": {
+                "prune": true,
+                "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+                "source": {
+                  "path": "denied-auto",
+                  "repoURL": "<REPO_URL>",
+                  "targetRevision": "main"
+                },
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ]
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "denied-auto",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "denied-auto",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceHydrator": {},
+          "sourceType": "Directory",
+          "summary": {},
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "denied-auto",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "Synced"
+          }
+        }
+      },
+      "denied-manual": {
+        "annotations": {},
+        "finalizers": [],
+        "objects": {
+          "ConfigMap/<NS>/denied-manual": {
+            "annotations": {
+              "argocd.argoproj.io/tracking-id": "denied-manual:/ConfigMap:<NS>/denied-manual",
+              "kubectl.kubernetes.io/last-applied-configuration": "<present>"
+            }
+          }
+        },
+        "operation": null,
+        "status": {
+          "controllerNamespace": "argocd",
+          "health": {
+            "status": "Healthy"
+          },
+          "history": [
+            {
+              "id": 0,
+              "initiatedBy": {
+                "username": "compat"
+              },
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          ],
+          "operationState": {
+            "message": "successfully synced (all tasks run)",
+            "operation": {
+              "initiatedBy": {
+                "username": "compat"
+              },
+              "retry": {},
+              "sync": {
+                "syncOptions": [
+                  "CreateNamespace=true"
+                ],
+                "syncStrategy": {
+                  "hook": {}
+                }
+              }
+            },
+            "phase": "Succeeded",
+            "syncResult": {
+              "resources": [],
+              "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            }
+          },
+          "resourceHealthSource": "appTree",
+          "resources": [
+            {
+              "kind": "ConfigMap",
+              "name": "denied-manual",
+              "namespace": "<NS>",
+              "status": "Synced",
+              "version": "v1"
+            }
+          ],
+          "sourceType": "Directory",
+          "sync": {
+            "comparedTo": {
+              "destination": {
+                "namespace": "<NS>",
+                "server": "https://kubernetes.default.svc"
+              },
+              "source": {
+                "path": "denied-manual",
+                "repoURL": "<REPO_URL>",
+                "targetRevision": "main"
+              }
+            },
+            "revision": "1b25a7c85999c14ef3408740167e684c34fd4615",
+            "status": "Synced"
+          }
+        }
+      }
+    },
+    "label": "opened"
+  }
+]

@@ -14,6 +14,7 @@ mod render;
 mod repo;
 mod sync;
 mod webhook;
+mod windows;
 
 use std::path::PathBuf;
 
@@ -49,6 +50,11 @@ enum Command {
         /// Where repositories, charts and rendered trees are cached
         #[arg(long, env = "LITECD_CACHE_DIR", default_value = "/tmp/litecd")]
         cache_dir: PathBuf,
+        /// Namespaces besides --namespace whose Applications are reconciled
+        /// (globs, `/regex/`), when argocd-cmd-params-cm has no
+        /// `application.namespaces`
+        #[arg(long, env = "ARGOCD_APPLICATION_NAMESPACES", default_value = "")]
+        application_namespaces: String,
         /// Where Git providers send pushes (`/api/webhook`, as argocd-server takes them); empty: none
         #[arg(long, env = "LITECD_LISTEN", default_value = "0.0.0.0:8080")]
         listen: String,
@@ -67,6 +73,7 @@ fn main() -> Result<()> {
             namespace,
             cache_dir,
             listen,
+            application_namespaces,
         } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -91,6 +98,7 @@ fn main() -> Result<()> {
                 let settings = app::Settings::from_config(cm.as_ref());
                 let repos = repo::Repos::new(cache_dir);
                 let ctx = std::sync::Arc::new(app::Ctx::new(kube, repos, namespace, settings));
+                *ctx.app_namespaces.write().await = app::split_list(&application_namespaces);
                 if !listen.is_empty() {
                     let c = ctx.clone();
                     tokio::spawn(async move {
@@ -112,7 +120,7 @@ fn main() -> Result<()> {
                 let mut term =
                     tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
                 tokio::select! {
-                    r = controller::Controller::new(ctx).run() => r,
+                    r = controller::Controller::new(ctx, application_namespaces).run() => r,
                     _ = term.recv() => Ok(()),
                     _ = tokio::signal::ctrl_c() => Ok(()),
                 }

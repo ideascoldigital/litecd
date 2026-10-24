@@ -18,6 +18,7 @@ use crate::app::{self, CompareError, Comparison, Ctx, REFRESH, Settings, Sources
 use crate::diff::merge_patch;
 use crate::kubeapi::Kind;
 use crate::sync::{self, Request, TaskResult};
+use crate::windows;
 
 pub const FINALIZER: &str = "resources-finalizer.argocd.argoproj.io";
 const FINALIZER_FG: &str = "resources-finalizer.argocd.argoproj.io/foreground";
@@ -25,15 +26,25 @@ const FINALIZER_BG: &str = "resources-finalizer.argocd.argoproj.io/background";
 
 pub struct Controller {
     ctx: Arc<Ctx>,
+    /// A task per app, by instance name (`<namespace>_<name>` outside the
+    /// controller's namespace).
     apps: Mutex<HashMap<String, mpsc::Sender<()>>>,
+    /// Every Application seen, reconciled or not: instance name →
+    /// (namespace, name), to start those application.namespaces enables.
+    seen: Mutex<HashMap<String, (String, String)>>,
     watched: Mutex<HashSet<String>>,
+    /// application.namespaces when argocd-cmd-params-cm has none (the
+    /// controller's flag).
+    default_app_namespaces: String,
 }
 
 impl Controller {
-    pub fn new(ctx: Arc<Ctx>) -> Arc<Self> {
+    pub fn new(ctx: Arc<Ctx>, default_app_namespaces: String) -> Arc<Self> {
         Arc::new(Controller {
             ctx,
+            default_app_namespaces,
             apps: Mutex::default(),
+            seen: Mutex::default(),
             watched: Mutex::default(),
         })
     }
@@ -50,9 +61,13 @@ impl Controller {
         }
     }
 
-    async fn ensure_task(self: &Arc<Self>, name: &str) {
+    async fn ensure_task(self: &Arc<Self>, ns: &str, name: &str) {
+        if !self.ctx.app_namespace_allowed(ns).await {
+            return;
+        }
+        let instance = self.instance(ns, name);
         let mut apps = self.apps.lock().await;
-        if let Some(tx) = apps.get(name)
+        if let Some(tx) = apps.get(&instance)
             && !tx.is_closed()
         {
             let _ = tx.try_send(());
@@ -60,18 +75,27 @@ impl Controller {
         }
         let (tx, rx) = mpsc::channel(1);
         let _ = tx.try_send(());
-        apps.insert(name.to_string(), tx);
+        apps.insert(instance.clone(), tx);
         let me = self.clone();
-        let name = name.to_string();
+        let (ns, name) = (ns.to_string(), name.to_string());
         tokio::spawn(async move {
             let mut task = AppTask {
                 c: me.clone(),
-                name: name.clone(),
+                ns,
+                name,
+                instance: instance.clone(),
                 last_fresh: None,
             };
             task.run(rx).await;
-            me.apps.lock().await.remove(&name);
+            me.apps.lock().await.remove(&instance);
         });
+    }
+
+    fn instance(&self, ns: &str, name: &str) -> String {
+        app::instance_name(
+            &json!({"metadata": {"namespace": ns, "name": name}}),
+            &self.ctx.namespace,
+        )
     }
 
     /// Watch a kind the apps manage: its changes wake the owning app.
@@ -141,6 +165,40 @@ impl Controller {
                 }
             });
         }
+        // argocd-cmd-params-cm: application.namespaces, then the apps it
+        // enables (an app it no longer enables ends its own task).
+        {
+            let me = self.clone();
+            let api: Api<k8s_openapi::api::core::v1::ConfigMap> =
+                Api::namespaced(client.clone(), &ns);
+            tokio::spawn(async move {
+                let cfg = watcher::Config::default().fields("metadata.name=argocd-cmd-params-cm");
+                let mut s = watcher::watcher(api, cfg).boxed();
+                while let Some(ev) = s.next().await {
+                    let data = match ev {
+                        Ok(Event::Apply(o) | Event::InitApply(o)) => o.data.unwrap_or_default(),
+                        Ok(Event::Delete(_)) => Default::default(),
+                        _ => continue,
+                    };
+                    let list = data
+                        .get("application.namespaces")
+                        .cloned()
+                        .unwrap_or_else(|| me.default_app_namespaces.clone());
+                    let list = app::split_list(&list);
+                    if *me.ctx.app_namespaces.read().await == list {
+                        continue;
+                    }
+                    info!("application namespaces: {list:?}");
+                    *me.ctx.app_namespaces.write().await = list;
+                    let seen: Vec<(String, String)> =
+                        me.seen.lock().await.values().cloned().collect();
+                    for (ns, name) in seen {
+                        me.ensure_task(&ns, &name).await;
+                    }
+                    me.kick_all().await;
+                }
+            });
+        }
         // AppProjects: every app.
         if let Ok(pk) = self
             .ctx
@@ -160,10 +218,12 @@ impl Controller {
                 }
             });
         }
-        // Applications: their own task, and the parent of a child app.
-        let api: Api<DynamicObject> = Api::namespaced_with(client, &ns, &app_kind.api_resource());
+        // Applications, in every namespace (application.namespaces says
+        // which are reconciled): their own task, and the parent of a child
+        // app.
+        let api: Api<DynamicObject> = Api::all_with(client, &app_kind.api_resource());
         let mut s = watcher::watcher(api, watcher::Config::default()).boxed();
-        info!("watching Applications in {ns}");
+        info!("watching Applications ({ns} and application.namespaces)");
         while let Some(ev) = s.next().await {
             let o = match ev {
                 Ok(Event::Apply(o) | Event::InitApply(o) | Event::Delete(o)) => o,
@@ -174,14 +234,21 @@ impl Controller {
                     continue;
                 }
             };
-            let Some(name) = o.metadata.name.clone() else {
+            let (Some(name), Some(app_ns)) =
+                (o.metadata.name.clone(), o.metadata.namespace.clone())
+            else {
                 continue;
             };
-            self.ensure_task(&name).await;
+            let instance = self.instance(&app_ns, &name);
+            self.seen
+                .lock()
+                .await
+                .insert(instance.clone(), (app_ns.clone(), name.clone()));
+            self.ensure_task(&app_ns, &name).await;
             let v = serde_json::to_value(&o).unwrap_or_default();
             let settings = self.ctx.settings.read().await.clone();
             if let Some(parent) = app::owner(&v, &settings)
-                && parent != name
+                && parent != instance
             {
                 self.kick(&parent).await;
             }
@@ -217,7 +284,10 @@ enum Next {
 
 struct AppTask {
     c: Arc<Controller>,
+    ns: String,
     name: String,
+    /// What its resources are tracked by (app::instance_name).
+    instance: String,
     last_fresh: Option<Instant>,
 }
 
@@ -325,11 +395,14 @@ fn status_from(
             if c.app_of_apps {
                 summary.insert("isAppOfApps".into(), json!(true));
             }
-            if !summary.is_empty() || s.contains_key("summary") || s.contains_key("operationState")
-            {
+            // Empty, only once written (Argo CD's own syncs write it).
+            if !summary.is_empty() || s.contains_key("summary") {
                 s.insert("summary".into(), Value::Object(summary));
             }
-            remove_conditions(&mut s, &["ComparisonError", "InvalidSpecError"]);
+            remove_conditions(
+                &mut s,
+                &["ComparisonError", "InvalidSpecError", "UnknownError"],
+            );
             // One SharedResourceWarning per shared resource, kept in place.
             let shared: Vec<String> = c
                 .resources
@@ -359,7 +432,7 @@ fn status_from(
                 s.insert("conditions".into(), Value::Array(conds));
             }
         }
-        Err(CompareError::InvalidSpec(msg)) => {
+        Err(e @ (CompareError::InvalidSpec(msg) | CompareError::Unknown(msg))) => {
             s.retain(|k, _| {
                 matches!(
                     k.as_str(),
@@ -368,15 +441,22 @@ fn status_from(
             });
             s.insert("health".into(), json!({"status": "Unknown"}));
             s.insert("sync".into(), json!({"status": "Unknown"}));
-            remove_conditions(&mut s, &["ComparisonError"]);
-            set_condition(&mut s, "InvalidSpecError", msg);
+            let ty = match e {
+                CompareError::Unknown(_) => "UnknownError",
+                _ => "InvalidSpecError",
+            };
+            remove_conditions(
+                &mut s,
+                &["ComparisonError", "InvalidSpecError", "UnknownError"],
+            );
+            set_condition(&mut s, ty, msg);
         }
         Err(CompareError::Comparison(msg)) => {
             s.insert(
                 "sync".into(),
                 json!({"comparedTo": compared_to(app, &Sources::of_app(app)), "status": "Unknown"}),
             );
-            remove_conditions(&mut s, &["InvalidSpecError"]);
+            remove_conditions(&mut s, &["InvalidSpecError", "UnknownError"]);
             set_condition(&mut s, "ComparisonError", msg);
         }
     }
@@ -408,7 +488,7 @@ impl AppTask {
                 Ok(Next::Again) => Duration::ZERO,
                 Ok(Next::Wait(d)) => d,
                 Err(e) => {
-                    warn!("app {}: {e:#}", self.name);
+                    warn!("app {}: {e:#}", self.instance);
                     Duration::from_secs(10)
                 }
             };
@@ -424,17 +504,14 @@ impl AppTask {
 
     async fn get(&self) -> Result<Option<Value>> {
         let k = self.app_kind().await?;
-        self.ctx()
-            .kube
-            .get(&k, Some(&self.ctx().namespace), &self.name)
-            .await
+        self.ctx().kube.get(&k, Some(&self.ns), &self.name).await
     }
 
     async fn patch(&self, patch: &Value) -> Result<Value> {
         let k = self.app_kind().await?;
         self.ctx()
             .kube
-            .merge_patch(&k, Some(&self.ctx().namespace), &self.name, patch)
+            .merge_patch(&k, Some(&self.ns), &self.name, patch)
             .await
     }
 
@@ -462,17 +539,24 @@ impl AppTask {
     }
 
     async fn reconcile(&mut self) -> Result<Next> {
+        if !self.ctx().app_namespace_allowed(&self.ns).await {
+            return Ok(Next::Gone);
+        }
         let Some(app) = self.get().await? else {
             return Ok(Next::Gone);
         };
         if app["metadata"]["deletionTimestamp"].is_string() {
             return self.finalize(&app).await;
         }
-        if app["operation"].is_object() {
-            self.operate(app).await?;
+        let reconcile_every = self.ctx().settings.read().await.reconcile;
+        // An operation a sync window holds back waits for the next
+        // refresh; the app is still compared meanwhile.
+        if app["operation"].is_object() && self.operate(app.clone()).await? {
             return Ok(Next::Again);
         }
-        let reconcile_every = self.ctx().settings.read().await.reconcile;
+        let Some(app) = self.get().await? else {
+            return Ok(Next::Gone);
+        };
         let refresh = app["metadata"]["annotations"][REFRESH]
             .as_str()
             .map(str::to_string);
@@ -504,13 +588,18 @@ impl AppTask {
         }
         let periodic = Next::Wait(reconcile_every.max(Duration::from_secs(5)));
         let Ok(cmp) = cmp else { return Ok(periodic) };
+        if app["operation"].is_object()
+            || !self.windows_allow(&app, false, None).await.unwrap_or(false)
+        {
+            return Ok(periodic);
+        }
         match self.auto_sync(&app, &cmp, &revisions) {
             AutoSync::No => Ok(periodic),
             AutoSync::Later(d) => Ok(Next::Wait(d.min(reconcile_every))),
             AutoSync::Now(op) => {
                 info!(
                     "app {}: automated sync to {}",
-                    self.name,
+                    self.instance,
                     revisions.join(", ")
                 );
                 let app = self.patch(&json!({"operation": op})).await?;
@@ -518,6 +607,70 @@ impl AppTask {
                 Ok(Next::Again)
             }
         }
+    }
+
+    /// Whether the project's sync windows let a sync of `app` run now.
+    async fn windows_allow(
+        &self,
+        app: &Value,
+        manual: bool,
+        started: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<bool, String> {
+        let Some(project) = app::project_of(self.ctx(), app).await else {
+            return Ok(true);
+        };
+        let w = windows::matching(&project, app);
+        windows::can_sync(&w, manual, started, chrono::Utc::now())
+    }
+
+    /// An operation a sync window holds back: Running, with Argo CD's
+    /// message, its result naming only the requested revision and source.
+    async fn hold(
+        &self,
+        app: &Value,
+        op: &Value,
+        started: &str,
+        err: Option<String>,
+    ) -> Result<()> {
+        let sync = &op["sync"];
+        let mut result = json!({"revision": sync["revision"].as_str().unwrap_or_default()});
+        if sync["source"].is_object() || sync["sources"].is_array() {
+            if sync["source"].is_object() {
+                result["source"] = sync["source"].clone();
+            }
+            if sync["sources"].is_array() {
+                result["sources"] = sync["sources"].clone();
+            }
+        } else {
+            if app["spec"]["sources"].is_array() {
+                result["sources"] = app["spec"]["sources"].clone();
+            }
+            let source = if app["spec"]["sources"]
+                .as_array()
+                .is_some_and(|s| !s.is_empty())
+            {
+                app["spec"]["sources"][0].clone()
+            } else {
+                app["spec"]["source"].clone()
+            };
+            if source.is_object() {
+                result["source"] = source;
+            }
+        }
+        if sync["revisions"].as_array().is_some_and(|r| !r.is_empty()) {
+            result["revisions"] = sync["revisions"].clone();
+        }
+        let message = match err {
+            Some(e) => format!("{}: {e}", windows::BLOCKED),
+            None => windows::BLOCKED.to_string(),
+        };
+        let mut status = app["status"].as_object().cloned().unwrap_or_default();
+        status.insert(
+            "operationState".into(),
+            json!({"operation": op, "phase": "Running", "startedAt": started, "message": message, "syncResult": result}),
+        );
+        self.write_status(app, &Value::Object(status), None).await?;
+        Ok(())
     }
 
     /// A comparison at given revisions against the app's destination.
@@ -650,8 +803,9 @@ impl AppTask {
         AutoSync::Now(json!({"initiatedBy": {"automated": true}, "retry": retry, "sync": sync}))
     }
 
-    /// Run the operation the app holds, to its end.
-    async fn operate(&mut self, mut app: Value) -> Result<()> {
+    /// Run the operation the app holds, to its end; false: a sync window
+    /// holds it back.
+    async fn operate(&mut self, mut app: Value) -> Result<bool> {
         let mut op = app["operation"].clone();
         if !op["initiatedBy"].is_object() {
             op["initiatedBy"] = json!({});
@@ -659,17 +813,39 @@ impl AppTask {
         if !op["retry"].is_object() {
             op["retry"] = json!({});
         }
-        let started = app::now();
+        // An operation already Running (held back by a window) keeps its
+        // start.
+        let last = &app["status"]["operationState"];
+        let started = match last["startedAt"].as_str() {
+            Some(t) if last["phase"] == "Running" && last["operation"] == op => t.to_string(),
+            _ => app::now(),
+        };
+        let manual = op["initiatedBy"]["automated"].as_bool() != Some(true);
+        let since = chrono::DateTime::parse_from_rfc3339(&started)
+            .ok()
+            .map(|t| t.with_timezone(&chrono::Utc));
+        match self.windows_allow(&app, manual, since).await {
+            Ok(true) => {}
+            Ok(false) => {
+                self.hold(&app, &op, &started, None).await?;
+                return Ok(false);
+            }
+            Err(e) => {
+                self.hold(&app, &op, &started, Some(e)).await?;
+                return Ok(false);
+            }
+        }
         let mut status = app["status"].as_object().cloned().unwrap_or_default();
         status.insert(
             "operationState".into(),
             json!({"operation": op, "phase": "Running", "startedAt": started}),
         );
-        // Argo CD writes it with the operations it starts itself.
+        // Argo CD writes them (empty) with the operations it starts itself:
+        // it updates the whole Application.
         if op["initiatedBy"]["automated"].as_bool() == Some(true) {
             status.entry("sourceHydrator").or_insert(json!({}));
+            status.entry("summary").or_insert(json!({}));
         }
-        status.entry("summary").or_insert(json!({}));
         app = self
             .write_status(&app, &Value::Object(status), None)
             .await?;
@@ -701,9 +877,11 @@ impl AppTask {
             let attempt = match revision {
                 Err(e) => Err((format!("{e:#}"), vec![], Vec::new())),
                 Ok(rev) => match self.target_compare(&app, &src, &rev).await {
-                    Err(CompareError::Comparison(m) | CompareError::InvalidSpec(m)) => {
-                        Err((m, vec![], rev))
-                    }
+                    Err(
+                        CompareError::Comparison(m)
+                        | CompareError::InvalidSpec(m)
+                        | CompareError::Unknown(m),
+                    ) => Err((m, vec![], rev)),
                     Ok(cmp) => {
                         let mut progress = OpProgress {
                             task: self,
@@ -733,12 +911,12 @@ impl AppTask {
                 }
                 Err((msg, results, rev)) => {
                     if msg == sync::TERMINATED {
-                        info!("app {}: operation terminated", self.name);
+                        info!("app {}: operation terminated", self.instance);
                         let Some(app) = self.get().await? else {
-                            return Ok(());
+                            return Ok(true);
                         };
                         if app["metadata"]["deletionTimestamp"].is_string() {
-                            return Ok(());
+                            return Ok(true);
                         }
                         break ("Failed", msg, results, rev);
                     }
@@ -765,7 +943,7 @@ impl AppTask {
                 }
             }
         };
-        info!("app {}: sync {phase}: {message}", self.name);
+        info!("app {}: sync {phase}: {message}", self.instance);
         let app = self.get().await?.unwrap_or(app);
         let mut st = app["status"].as_object().cloned().unwrap_or_default();
         let mut state = json!({
@@ -822,7 +1000,7 @@ impl AppTask {
         }
         self.write_status(&app, &Value::Object(st), Some(json!({"operation": null})))
             .await?;
-        Ok(())
+        Ok(true)
     }
 
     /// Delete what the app manages, then let the app go.
@@ -873,7 +1051,7 @@ impl AppTask {
             let Ok(Some(live)) = kube.get(&kind, ns, name).await else {
                 continue;
             };
-            if app::owner(&live, &settings).as_deref() != Some(self.name.as_str()) {
+            if app::owner(&live, &settings).as_deref() != Some(self.instance.as_str()) {
                 continue;
             }
             remaining += 1;
@@ -942,7 +1120,7 @@ impl sync::Progress for OpProgress<'_> {
         }
         status["operationState"] = state;
         if let Err(e) = t.write_status(&app, &status, None).await {
-            warn!("app {}: {e:#}", t.name);
+            warn!("app {}: {e:#}", t.instance);
         }
         true
     }

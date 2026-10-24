@@ -1,0 +1,35 @@
+# In <NS>-apps, a namespace the controller reconciles (application.namespaces).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: any-ns
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: compat-any-ns
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+# Its project (default) lists no source namespaces.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: not-permitted
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

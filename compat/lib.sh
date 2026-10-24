@@ -13,6 +13,9 @@
 #   SNAPSHOTS   the file snapshot appends to
 
 ARGOCD_NS=${ARGOCD_NS:-argocd}
+# Namespaces besides ARGOCD_NS whose Applications the target reconciles
+# (argocd-cmd-params-cm's application.namespaces): a case's own <NS>-apps.
+APP_NAMESPACES=compat-*-apps
 GIT_NS=litecd-compat
 GIT_SVC=http://git.$GIT_NS.svc.cluster.local
 
@@ -107,25 +110,30 @@ publish_chart() {
 
 # --- Applications ---------------------------------------------------------
 
-# Apply manifests from a file of the case (or stdin with -) into the Argo CD
-# namespace, with <REPO_URL>, <CHART_REPO>, <NS> and <CASE> filled in. Every
-# object gets the case label, so the runner can delete what the case left.
+# The namespace of the Applications the helpers below act on: Argo CD's own,
+# or APP_NS for apps in another namespace (`APP_NS=$NS-apps app_get a ...`).
+app_ns() { echo "${APP_NS:-$ARGOCD_NS}"; }
+
+# Apply manifests from a file of the case (or stdin with -) into the
+# Applications' namespace, with <REPO_URL>, <CHART_REPO>, <NS> and <CASE>
+# filled in. Every object gets the case label, so the runner can delete what
+# the case left.
 app_apply() {
     local src=$1
     [[ "$src" == - ]] || src="$CASE_DIR/$src"
     local objs
     objs=$(sed -e "s#<REPO_URL>#$REPO_URL#g" -e "s#<CHART_REPO>#$CHART_REPO#g" -e "s#<NS>#$NS#g" -e "s#<CASE>#$CASE_ID#g" \
-        "$src" | k -n "$ARGOCD_NS" apply -f - -o name)
+        "$src" | k -n "$(app_ns)" apply -f - -o name)
     local obj
     for obj in $objs; do
-        k -n "$ARGOCD_NS" label "$obj" compat.litecd.dev/case="$CASE_ID" --overwrite >/dev/null
+        k -n "$(app_ns)" label "$obj" compat.litecd.dev/case="$CASE_ID" --overwrite >/dev/null
     done
 }
 
 # app_get <app> <jsonpath>
-app_get() { k -n "$ARGOCD_NS" get application "$1" -o jsonpath="{$2}"; }
+app_get() { k -n "$(app_ns)" get application "$1" -o jsonpath="{$2}"; }
 
-app_refresh() { k -n "$ARGOCD_NS" annotate application "$1" argocd.argoproj.io/refresh="${2:-normal}" --overwrite >/dev/null; }
+app_refresh() { k -n "$(app_ns)" annotate application "$1" argocd.argoproj.io/refresh="${2:-normal}" --overwrite >/dev/null; }
 
 # Start a sync the way the argocd CLI and UI do: an `operation` on the
 # object. Like Argo CD's API server when the request names none, the
@@ -133,9 +141,9 @@ app_refresh() { k -n "$ARGOCD_NS" annotate application "$1" argocd.argoproj.io/r
 app_sync() {
     local rev="" opts
     [[ -n "${2:-}" ]] && rev="\"revision\":\"$2\","
-    opts=$(k -n "$ARGOCD_NS" get application "$1" -o json |
+    opts=$(k -n "$(app_ns)" get application "$1" -o json |
         python3 -c 'import json,sys; print(json.dumps(((json.load(sys.stdin)["spec"].get("syncPolicy") or {}).get("syncOptions")) or []))')
-    k -n "$ARGOCD_NS" patch application "$1" --type merge -p \
+    k -n "$(app_ns)" patch application "$1" --type merge -p \
         "{\"operation\":{\"initiatedBy\":{\"username\":\"compat\"},\"sync\":{$rev\"syncOptions\":$opts,\"syncStrategy\":{\"hook\":{}}}}}" >/dev/null
 }
 
@@ -191,7 +199,7 @@ snapshot() {
     done
     local label=$1
     shift
-    python3 "$COMPAT_DIR/snapshot.py" ${flags[@]+"${flags[@]}"} --namespace "$ARGOCD_NS" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"
+    python3 "$COMPAT_DIR/snapshot.py" ${flags[@]+"${flags[@]}"} --namespace "$(app_ns)" --label "$label" --repo "$REPO_URL" --ns "$NS" "$@" >>"$SNAPSHOTS"
 }
 
 # --- other clusters ---------------------------------------------------------

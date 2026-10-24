@@ -132,6 +132,9 @@ pub struct Ctx {
     pub repos: Repos,
     pub namespace: String,
     pub settings: RwLock<Settings>,
+    /// argocd-cmd-params-cm's `application.namespaces`: where else
+    /// Applications are reconciled (globs, or regular expressions in `/.../`).
+    pub app_namespaces: RwLock<Vec<String>>,
     manifests: Mutex<HashMap<String, Arc<Rendered>>>,
     /// Server-side dry runs that found a live object in sync: (live
     /// resourceVersion, desired) → in sync.
@@ -152,10 +155,17 @@ impl Ctx {
             repos,
             namespace,
             settings: RwLock::new(settings),
+            app_namespaces: RwLock::default(),
             manifests: Mutex::default(),
             dry_runs: Mutex::default(),
             clusters: Mutex::default(),
         }
+    }
+
+    /// Whether Applications in `ns` are reconciled: the controller's own
+    /// namespace, or one `application.namespaces` lists.
+    pub async fn app_namespace_allowed(&self, ns: &str) -> bool {
+        ns == self.namespace || match_in_list(&self.app_namespaces.read().await, ns)
     }
 
     /// The cluster a destination names (by server, or by name through the
@@ -275,6 +285,16 @@ pub fn is_self(app: &Value, k: &Key) -> bool {
         && k.kind == "Application"
         && app["metadata"]["name"] == k.name.as_str()
         && app["metadata"]["namespace"] == k.namespace.as_str()
+}
+
+/// The name an app's resources are tracked by: its name, or
+/// `<namespace>_<name>` for one outside the controller's namespace.
+pub fn instance_name(app: &Value, controller_ns: &str) -> String {
+    let name = app["metadata"]["name"].as_str().unwrap_or_default();
+    match app["metadata"]["namespace"].as_str() {
+        Some(ns) if !ns.is_empty() && ns != controller_ns => format!("{ns}_{name}"),
+        _ => name.to_string(),
+    }
 }
 
 /// The tracking id Argo CD writes: `<app>:<group>/<Kind>:<namespace>/<name>`.
@@ -501,6 +521,8 @@ pub struct Comparison {
 pub enum CompareError {
     InvalidSpec(String),
     Comparison(String),
+    /// Argo CD's UnknownError condition (an app its project refuses).
+    Unknown(String),
 }
 
 pub fn spec_source(app: &Value) -> Value {
@@ -600,7 +622,7 @@ pub async fn render(
     revisions: &[String],
     hard: bool,
 ) -> Result<Arc<Rendered>> {
-    let name = app["metadata"]["name"].as_str().unwrap_or_default();
+    let name = instance_name(app, &ctx.namespace);
     let ns = destination_namespace(app);
     let key = format!("{name}|{ns}|{revisions:?}|{:?}", sources.list);
     if !hard && let Some(r) = ctx.manifests.lock().await.get(&key) {
@@ -700,7 +722,8 @@ pub async fn desired_objects(
     app: &Value,
     rendered: &Rendered,
 ) -> Vec<Desired> {
-    let name = app["metadata"]["name"].as_str().unwrap_or_default();
+    let name = instance_name(app, &ctx.namespace);
+    let name = name.as_str();
     let dest_ns = destination_namespace(app);
     let settings = ctx.settings.read().await;
     let mut out = Vec::new();
@@ -944,6 +967,20 @@ pub fn app_options(op_or_spec_options: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The app's AppProject, if it exists.
+pub async fn project_of(ctx: &Ctx, app: &Value) -> Option<Value> {
+    let project = app["spec"]["project"]
+        .as_str()
+        .filter(|p| !p.is_empty())
+        .unwrap_or("default");
+    let kind = ctx.kube.known("argoproj.io/v1alpha1", "AppProject").await?;
+    ctx.kube
+        .get(&kind, Some(&ctx.namespace), project)
+        .await
+        .ok()
+        .flatten()
+}
+
 /// Project rules: the source repository and the destination must be
 /// permitted.
 pub async fn check_project(
@@ -967,6 +1004,22 @@ pub async fn check_project(
         }
         Err(e) => return Err(CompareError::Comparison(e.to_string())),
     };
+    let app_ns = app["metadata"]["namespace"].as_str().unwrap_or_default();
+    if !app_ns.is_empty() && app_ns != ctx.namespace {
+        let allowed: Vec<String> = proj["spec"]["sourceNamespaces"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+        if !match_in_list(&allowed, app_ns) {
+            let name = app["metadata"]["name"].as_str().unwrap_or_default();
+            return Err(CompareError::Unknown(format!(
+                "application '{name}' in namespace '{app_ns}' is not permitted to use project '{project}'"
+            )));
+        }
+    }
     let sources: Vec<Value> = match app["spec"]["sources"].as_array() {
         Some(s) => s.clone(),
         None => vec![spec_source(app)],
@@ -1021,6 +1074,28 @@ pub async fn check_project(
     Ok(())
 }
 
+/// A comma-separated list, as Argo CD's flags and settings take them.
+pub fn split_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Argo CD's namespace lists: a glob, or a regular expression between
+/// slashes.
+pub fn match_in_list(patterns: &[String], s: &str) -> bool {
+    patterns.iter().any(|p| {
+        let p = p.trim();
+        if p.len() > 1 && p.starts_with('/') && p.ends_with('/') {
+            regex::Regex::new(&p[1..p.len() - 1]).is_ok_and(|r| r.is_match(s))
+        } else {
+            glob_match(p, s)
+        }
+    })
+}
+
 /// Argo CD's project globs: `*` matches anything (also `/`), braces alternate.
 pub fn glob_match(pattern: &str, text: &str) -> bool {
     if pattern == "*" {
@@ -1058,10 +1133,7 @@ pub async fn compare(
                 .await;
         }
     }
-    let name = app["metadata"]["name"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let name = instance_name(app, &ctx.namespace);
     let settings = ctx.settings.read().await.clone();
     let options = app_options(&app["spec"]["syncPolicy"]["syncOptions"]);
     let app_ssa = options.iter().any(|o| o == "ServerSideApply=true");

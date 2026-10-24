@@ -1,0 +1,16 @@
+# In <NS>-other, a namespace the controller does not reconcile.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: not-enabled
+spec:
+  project: compat-any-ns
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}

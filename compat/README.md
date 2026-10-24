@@ -37,6 +37,10 @@ the snapshots of every case), not committed.
   `operation`, as the CLI and UI start a sync), `app_refresh`, `wait_app`,
   `wait_rev`, `wait_op`, and `snapshot <label> <app>...`.
 
+Applications live in Argo CD's namespace; `APP_NS=<namespace>` before a
+helper acts on ones in another (the targets reconcile `compat-*-apps` as
+well, argocd-cmd-params-cm's `application.namespaces`).
+
 `cluster_secret <name> <server>` (lib.sh) registers this same cluster under
 another URL with a ServiceAccount token: Argo CD tells clusters apart by
 URL, so that is the whole remote-cluster path without a second cluster.
@@ -111,11 +115,13 @@ so litecd is compared on the same kind of cluster.
 | cluster_secret_destination | 3 | a cluster Secret's destination, by name and by server |
 | cluster_unknown_destination | 3 | a destination no cluster matches: Argo CD's InvalidSpecError, by name and by server |
 | appset_clusters_secret | 3 | clusters generator with a selector: the labelled Secret, not in-cluster |
+| apps_any_namespace | 3 | Applications in another namespace (`application.namespaces`): `<ns>_<app>` tracking, heal, finalizer; a project without the source namespace (UnknownError); a namespace not enabled is ignored |
+| sync_windows | 3 | deny and allow windows by app, namespace, cluster and AND; manual syncs held (`manualSync` lets them through); a window removed |
 
 ## litecd
 
-2026-10-24, litecd with phases 1 and 2 on a fresh cluster (Argo CD's CRDs
-only): 26/26 cases equal their golden files, twice in a row. Every new
+2026-10-24, litecd with phases 1 to 3 on litek8s 0.2.8 (omarchy, x86_64):
+38/38 cases equal their golden files, twice in a row. Every new
 case's golden file was written from Argo CD and reproduced twice before
 litecd ran it.
 
