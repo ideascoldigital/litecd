@@ -479,8 +479,10 @@ impl AppTask {
                     k = rx.recv() => if k.is_none() { return },
                     _ = tokio::time::sleep(wait) => {},
                 }
-                // Coalesce a burst of events.
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                // Coalesce a burst of events (the objects of one apply
+                // arrive within a few ms; one more wake lands in the
+                // channel's single slot while the reconcile runs).
+                tokio::time::sleep(Duration::from_millis(20)).await;
                 while rx.try_recv().is_ok() {}
             }
             wait = match self.reconcile().await {

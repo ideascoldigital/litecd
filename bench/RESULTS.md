@@ -88,11 +88,12 @@ there by `deploy/build.sh`), so its 0.6 s are a pod start. A pull of the
 **Single-app timings.** These sit at the harness's resolution: each
 `kubectl` call takes about 0.05 s and the bench polls every 0.25 s, so
 0.39 s and 0.46 s mean "done by the second poll" for either target, and
-the two cannot be told apart below ~0.3 s. Where litecd is one poll
-slower (a commit, 0.68 s; a heal, 0.77 s against 0.43 s) the cause is its
-coalescing: every time an app's task wakes it waits 200 ms to merge a
+the two cannot be told apart below ~0.3 s. Where litecd was one poll
+slower (a commit, 0.68 s; a heal, 0.77 s against 0.43 s) the cause was its
+coalescing: every time an app's task woke it waited 200 ms to merge a
 burst of events (`src/controller.rs`), and a heal takes several wakes
-(the Deployment deleted, re-applied, then Available). The first sync after
+(the Deployment deleted, re-applied, then Available); at 20 ms they match
+(below). The first sync after
 start was slower for litecd (2.86 s against 1.1 s): both clone the repo
 and discover the API then, and the later repeats are equal.
 
@@ -102,6 +103,26 @@ Application, each cloning, rendering and applying on its own; Argo CD
 queues apps through the application controller's processors and the repo
 server's manifest generation, and moves them through comparison and
 operation in separate passes.
+
+## After shortening the coalescing wait
+
+The same bench, litecd only, after its wait to merge events went from
+200 ms to 20 ms (same cluster, same day; the build also has apps in any
+namespace and sync windows). Raw results:
+[results/20261024-coalesce/litecd.json](results/20261024-coalesce/litecd.json).
+
+| | Argo CD | litecd, 200 ms | litecd, 20 ms |
+|---|---|---|---|
+| App created → Synced + Healthy (median, range) | 0.46 s (0.46–1.1) | 0.46 s (0.45–2.86) | 0.46 s (0.45–0.46) |
+| Commit + refresh → Synced on it | 0.39 s (0.39–0.39) | 0.68 s (0.39–0.68) | 0.39 s (0.39–0.39) |
+| Deployment deleted → healed, Healthy | 0.43 s (0.43–0.44) | 0.77 s (0.77–0.77) | 0.43 s (0.43–0.43) |
+| 19 apps at once → all Synced + Healthy | 5.72 s | 3.28 s | 3.27 s |
+| Memory, 20 apps idle (working set / anonymous) | 310.2 / 225.0 MiB | 6.9 / 4.1 MiB | 7.6 / 5.4 MiB |
+| CPU idle, 20 apps | 0.382 % | 0.147 % | 0.164 % |
+
+Single syncs and heals now land on the same poll as Argo CD's; the burst,
+memory and idle CPU stay where they were (the memory and CPU differences
+are within run-to-run noise and the larger binary).
 
 ## Reproduce
 
