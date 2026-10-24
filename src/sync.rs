@@ -70,6 +70,8 @@ pub struct TaskResult {
     pub hook_phase: &'static str,
     pub sync_phase: &'static str,
     pub images: Vec<String>,
+    /// For a hook: PreSync, Sync, PostSync or SyncFail.
+    pub hook_type: Option<String>,
 }
 
 impl TaskResult {
@@ -88,6 +90,9 @@ impl TaskResult {
         if !self.images.is_empty() {
             r["images"] = json!(self.images);
         }
+        if let Some(h) = &self.hook_type {
+            r["hookType"] = json!(h);
+        }
         r
     }
 }
@@ -95,6 +100,8 @@ impl TaskResult {
 /// What the operation asks for.
 pub struct Request {
     pub prune: bool,
+    /// ignoreDifferences, for RespectIgnoreDifferences=true.
+    pub ignore: Vec<crate::ignore::Rule>,
     pub options: Vec<String>,
     /// Selective sync: only these (group, kind, name).
     pub only: Option<Vec<(String, String, String)>>,
@@ -115,6 +122,7 @@ impl Request {
                 .collect()
         });
         Request {
+            ignore: Vec::new(),
             prune: sync["prune"].as_bool().unwrap_or(false),
             options: app::app_options(&sync["syncOptions"]),
             only,
@@ -193,7 +201,7 @@ pub async fn run(
     cmp: &Comparison,
     req: &Request,
     progress: &mut impl Progress,
-) -> Result<Vec<TaskResult>, Failed> {
+) -> Result<Done, Failed> {
     let mut results = Vec::new();
     let dest_ns = app::destination_namespace(app_obj);
 
@@ -225,6 +233,7 @@ pub async fn run(
                             hook_phase: "Running",
                             sync_phase: "PreSync",
                             images: vec![],
+                            hook_type: None,
                         }),
                         Err(e) => {
                             return Err(Failed {
@@ -289,12 +298,16 @@ pub async fn run(
     let mut dry_failures = Vec::new();
     let ns_kind = ctx.kube.known("v1", "Namespace").await;
     let mut checked_ns = BTreeSet::new();
-    for t in &tasks {
-        let Task::Apply(d, _) = t else { continue };
+    let hooks: Vec<&Desired> = cmp.desired.iter().filter(|d| d.hook.is_some()).collect();
+    let applies = tasks.iter().filter_map(|t| match t {
+        Task::Apply(d, _) => Some(*d),
+        Task::Prune(_) => None,
+    });
+    for d in applies.chain(hooks.iter().copied()) {
         if d.kind.is_none() && !defines_crd(d) && !d.has_option("SkipDryRunOnMissingResource=true")
         {
             dry_failures.push((
-                *d,
+                d,
                 format!(
                     "the server could not find the requested resource (kind {} in {})",
                     d.key.kind,
@@ -318,7 +331,7 @@ pub async fn run(
             if exists {
                 checked_ns.insert(d.key.namespace.clone());
             } else {
-                dry_failures.push((*d, format!("namespaces \"{}\" not found", d.key.namespace)));
+                dry_failures.push((d, format!("namespaces \"{}\" not found", d.key.namespace)));
             }
         }
     }
@@ -336,59 +349,314 @@ pub async fn run(
                 hook_phase: "Failed",
                 sync_phase: "Sync",
                 images: workload_images(&d.obj),
+                hook_type: d.hook.clone(),
             });
         }
         return Err(Failed { message, results });
     }
 
-    let waves: Vec<i64> = {
-        let mut w: Vec<i64> = tasks.iter().map(Task::wave).collect();
-        w.dedup();
-        w
+    let phase_hooks = |phase: &str| -> Vec<&Desired> {
+        let mut h: Vec<&Desired> = hooks
+            .iter()
+            .copied()
+            .filter(|d| d.hook.as_deref() == Some(phase))
+            .collect();
+        h.sort_by(|a, b| {
+            (a.wave, kind_rank(&a.key.kind), &a.key.name).cmp(&(
+                b.wave,
+                kind_rank(&b.key.kind),
+                &b.key.name,
+            ))
+        });
+        h
     };
-    for (i, wave) in waves.iter().enumerate() {
-        let mut failed = None;
-        let mut applied: Vec<&Desired> = Vec::new();
-        for t in tasks.iter().filter(|t| t.wave() == *wave) {
-            match t {
-                Task::Apply(d, state) => {
-                    let r = apply(ctx, d, *state, req).await;
-                    if r.status == "SyncFailed" && failed.is_none() {
-                        failed = Some(r.message.clone());
+    let mut created: Vec<Hook> = Vec::new();
+    let mut waited_last = false;
+    let outcome = async {
+        // PreSync hooks, each to its end.
+        let pre = phase_hooks("PreSync");
+        if !pre.is_empty() {
+            run_hooks(ctx, &pre, "PreSync", &mut results, &mut created, progress).await?;
+            waited_last = true;
+        }
+        // Sync: the resources in waves, with the Sync hooks of each wave.
+        let sync_hooks = phase_hooks("Sync");
+        let mut waves: Vec<i64> = tasks
+            .iter()
+            .map(Task::wave)
+            .chain(sync_hooks.iter().map(|d| d.wave))
+            .collect();
+        waves.sort();
+        waves.dedup();
+        let mut all_applied: Vec<&Desired> = Vec::new();
+        for (i, wave) in waves.iter().enumerate() {
+            let mut failed = None;
+            let mut applied: Vec<&Desired> = Vec::new();
+            waited_last = false;
+            for t in tasks.iter().filter(|t| t.wave() == *wave) {
+                match t {
+                    Task::Apply(d, state) => {
+                        let r = apply(ctx, d, *state, req).await;
+                        if r.status == "SyncFailed" && failed.is_none() {
+                            failed = Some(r.message.clone());
+                        }
+                        if r.status != "SyncFailed" && !app::is_self(app_obj, &d.key) {
+                            applied.push(d);
+                        }
+                        results.push(r);
                     }
-                    if r.status != "SyncFailed" && !app::is_self(app_obj, &d.key) {
-                        applied.push(d);
+                    Task::Prune(r) => {
+                        let res = prune(ctx, r, req).await;
+                        if res.status == "SyncFailed" && failed.is_none() {
+                            failed = Some(res.message.clone());
+                        }
+                        results.push(res);
                     }
-                    results.push(r);
-                }
-                Task::Prune(r) => {
-                    let res = prune(ctx, r, req).await;
-                    if res.status == "SyncFailed" && failed.is_none() {
-                        failed = Some(res.message.clone());
-                    }
-                    results.push(res);
                 }
             }
-        }
-        if let Some(msg) = failed {
-            return Err(Failed {
-                message: format!(
+            if let Some(msg) = failed {
+                return Err(format!(
                     "one or more synchronization tasks completed unsuccessfully, reason: {msg}"
-                ),
-                results,
-            });
-        }
-        if i + 1 < waves.len() {
-            if !wait_healthy(ctx, &applied, &results, progress).await {
-                return Err(Failed {
-                    message: TERMINATED.into(),
-                    results,
-                });
+                ));
             }
-            tokio::time::sleep(WAVE_DELAY).await;
+            let wave_hooks: Vec<&Desired> = sync_hooks
+                .iter()
+                .copied()
+                .filter(|d| d.wave == *wave)
+                .collect();
+            if !wave_hooks.is_empty() {
+                run_hooks(
+                    ctx,
+                    &wave_hooks,
+                    "Sync",
+                    &mut results,
+                    &mut created,
+                    progress,
+                )
+                .await?;
+                waited_last = true;
+            }
+            all_applied.extend(applied.iter().copied());
+            if i + 1 < waves.len() {
+                if !wait_healthy(ctx, &applied, &results, progress).await {
+                    return Err(TERMINATED.to_string());
+                }
+                tokio::time::sleep(WAVE_DELAY).await;
+            }
+        }
+        // PostSync hooks once everything synced is healthy.
+        let post = phase_hooks("PostSync");
+        if !post.is_empty() {
+            if !wait_healthy(ctx, &all_applied, &results, progress).await {
+                return Err(TERMINATED.to_string());
+            }
+            run_hooks(ctx, &post, "PostSync", &mut results, &mut created, progress).await?;
+            waited_last = true;
+        }
+        Ok(())
+    }
+    .await;
+    match outcome {
+        Ok(()) => {
+            cleanup_hooks(ctx, &created, true).await;
+            Ok(Done {
+                results,
+                no_more_tasks: waited_last,
+            })
+        }
+        Err(message) => {
+            if message != TERMINATED {
+                let fail = phase_hooks("SyncFail");
+                if !fail.is_empty() {
+                    let _ = run_hooks(ctx, &fail, "SyncFail", &mut results, &mut created, progress)
+                        .await;
+                }
+            }
+            cleanup_hooks(ctx, &created, false).await;
+            Err(Failed { message, results })
         }
     }
-    Ok(results)
+}
+
+/// A successful sync: its results, and whether it ended waiting for hooks
+/// (Argo CD then says "no more tasks" instead of "all tasks run").
+pub struct Done {
+    pub results: Vec<TaskResult>,
+    pub no_more_tasks: bool,
+}
+
+/// A hook created by this sync, for its delete policy.
+struct Hook {
+    kind: Kind,
+    namespace: String,
+    name: String,
+    policies: Vec<String>,
+    succeeded: bool,
+}
+
+/// Create a phase's hooks and wait for each to complete (healthy: it
+/// succeeded; degraded: it failed). Err: why the phase failed.
+async fn run_hooks(
+    ctx: &Ctx,
+    hooks: &[&Desired],
+    phase: &'static str,
+    results: &mut Vec<TaskResult>,
+    created: &mut Vec<Hook>,
+    progress: &mut impl Progress,
+) -> Result<(), String> {
+    let mut started = Vec::new();
+    for d in hooks {
+        let mut r = TaskResult {
+            key: d.key.clone(),
+            version: d.version.clone(),
+            status: "Synced",
+            message: String::new(),
+            hook_phase: "Running",
+            sync_phase: phase,
+            images: workload_images(&d.obj),
+            hook_type: Some(phase.to_string()),
+        };
+        let kind = match &d.kind {
+            Some(k) => k.clone(),
+            None => match ctx
+                .kube
+                .kind(
+                    d.obj["apiVersion"].as_str().unwrap_or_default(),
+                    &d.key.kind,
+                )
+                .await
+            {
+                Ok(k) => k,
+                Err(e) => {
+                    r.status = "SyncFailed";
+                    r.hook_phase = "Failed";
+                    r.message = err_msg(&e);
+                    results.push(r);
+                    return Err(format!(
+                        "one or more synchronization tasks completed unsuccessfully, reason: {}",
+                        err_msg(&e)
+                    ));
+                }
+            },
+        };
+        let ns = (!d.key.namespace.is_empty()).then_some(d.key.namespace.as_str());
+        let policies = if d.delete_policies.is_empty() {
+            vec!["BeforeHookCreation".to_string()]
+        } else {
+            d.delete_policies.clone()
+        };
+        if !d.key.name.is_empty() && policies.iter().any(|p| p == "BeforeHookCreation") {
+            let _ = ctx.kube.delete(&kind, ns, &d.key.name, "Foreground").await;
+            for _ in 0..120 {
+                if !matches!(ctx.kube.get(&kind, ns, &d.key.name).await, Ok(Some(_))) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        let name = match ctx.kube.create(&kind, ns, &d.obj, false).await {
+            Ok(obj) => obj["metadata"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            // Already there and kept (no BeforeHookCreation): that one runs.
+            Err(e) if e.downcast_ref::<ApiError>().is_some_and(|a| a.code == 409) => {
+                d.key.name.clone()
+            }
+            Err(e) => {
+                r.status = "SyncFailed";
+                r.hook_phase = "Failed";
+                r.message = err_msg(&e);
+                results.push(r);
+                return Err(format!(
+                    "one or more synchronization tasks completed unsuccessfully, reason: {}",
+                    err_msg(&e)
+                ));
+            }
+        };
+        r.key.name = name.clone();
+        r.message = format!("{}/{name} created", lower(&kind.kind));
+        created.push(Hook {
+            kind: kind.clone(),
+            namespace: d.key.namespace.clone(),
+            name: name.clone(),
+            policies,
+            succeeded: false,
+        });
+        results.push(r);
+        started.push((
+            results.len() - 1,
+            created.len() - 1,
+            kind,
+            d.key.namespace.clone(),
+            name,
+        ));
+    }
+    let custom = ctx.settings.read().await.health.clone();
+    let mut pending: Vec<usize> = (0..started.len()).collect();
+    let mut failure = None;
+    while !pending.is_empty() {
+        let mut still = Vec::new();
+        for i in pending {
+            let (ri, ci, kind, ns, name) = &started[i];
+            let nsr = (!ns.is_empty()).then_some(ns.as_str());
+            let live = ctx.kube.get(kind, nsr, name).await.ok().flatten();
+            let done = match &live {
+                // Gone already (a TTL, say): it ran.
+                None => Some((true, String::new())),
+                Some(l) => match crate::health::assess(l, &custom) {
+                    Ok(None) => Some((true, String::new())),
+                    Ok(Some(h)) if h.status == Status::Healthy => Some((true, h.message)),
+                    Ok(Some(h)) if h.status == Status::Degraded => Some((false, h.message)),
+                    _ => None,
+                },
+            };
+            match done {
+                Some((ok, msg)) => {
+                    let r = &mut results[*ri];
+                    r.hook_phase = if ok { "Succeeded" } else { "Failed" };
+                    if !msg.is_empty() {
+                        r.message = msg.clone();
+                    }
+                    created[*ci].succeeded = ok;
+                    if !ok && failure.is_none() {
+                        failure = Some(msg);
+                    }
+                }
+                None => still.push(i),
+            }
+        }
+        pending = still;
+        if let Some(&i) = pending.first() {
+            let (_, _, kind, _, name) = &started[i];
+            let what = format!("{}/{}/{name}", kind.group, kind.kind);
+            if !progress
+                .waiting(format!("waiting for completion of hook {what}"), results)
+                .await
+            {
+                return Err(TERMINATED.to_string());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+    match failure {
+        Some(m) => Err(format!(
+            "one or more synchronization tasks completed unsuccessfully, reason: {m}"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// Delete the hooks whose policy asks for it.
+async fn cleanup_hooks(ctx: &Ctx, created: &[Hook], _sync_ok: bool) {
+    for h in created {
+        let delete = (h.succeeded && h.policies.iter().any(|p| p == "HookSucceeded"))
+            || (!h.succeeded && h.policies.iter().any(|p| p == "HookFailed"));
+        if delete {
+            let ns = (!h.namespace.is_empty()).then_some(h.namespace.as_str());
+            let _ = ctx.kube.delete(&h.kind, ns, &h.name, "Background").await;
+        }
+    }
 }
 
 fn workload_images(obj: &Value) -> Vec<String> {
@@ -417,6 +685,7 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
         hook_phase: "Running",
         sync_phase: "Sync",
         images: workload_images(&d.obj),
+        hook_type: None,
     };
     let kind: Kind = match &d.kind {
         Some(k) => k.clone(),
@@ -441,6 +710,18 @@ async fn apply(ctx: &Ctx, d: &Desired, state: Option<&ResourceState>, req: &Requ
     let live = state.and_then(|s| s.live.as_ref());
     let what = format!("{}/{}", lower(&kind.kind), d.key.name);
     let replace = d.has_option("Replace=true") || req.has("Replace=true");
+    // RespectIgnoreDifferences: what the comparison ignores keeps its live value.
+    let desired = match live {
+        Some(l) if req.has("RespectIgnoreDifferences=true") && !req.ignore.is_empty() => {
+            let paths = crate::ignore::ignored(&req.ignore, &d.key, &d.obj, Some(l));
+            crate::ignore::respect(&d.obj, l, &paths)
+        }
+        _ => d.obj.clone(),
+    };
+    let d = &Desired {
+        obj: desired,
+        ..d.clone()
+    };
     let ssa = d.has_option("ServerSideApply=true") || req.has("ServerSideApply=true");
     let result = if replace {
         match live {
@@ -496,6 +777,7 @@ async fn prune(ctx: &Ctx, s: &ResourceState, req: &Request) -> TaskResult {
         hook_phase: "Succeeded",
         sync_phase: "Sync",
         images: vec![],
+        hook_type: None,
     };
     let no_prune = live.is_some_and(|l| app::options_of(l).iter().any(|o| o == "Prune=false"));
     if no_prune {

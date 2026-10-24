@@ -182,7 +182,7 @@ pub async fn helm_template(
     chart: &Path,
     source: &Value,
     cx: &RenderCtx<'_>,
-    values_root: Option<&Path>,
+    refs: &std::collections::HashMap<String, PathBuf>,
 ) -> Result<Vec<Value>> {
     let h = &source["helm"];
     let release = h["releaseName"]
@@ -236,9 +236,13 @@ pub async fn helm_template(
             cmd.args(["--values", f]);
             continue;
         }
-        let path = match (f.strip_prefix("$values/"), values_root) {
-            (Some(rest), Some(root)) => root.join(rest),
-            _ => chart.join(f),
+        // `$<ref>/path`: a file of another source (multi-source).
+        let path = match f.strip_prefix('$').and_then(|r| r.split_once('/')) {
+            Some((r, rest)) => match refs.get(r) {
+                Some(root) => root.join(rest),
+                None => bail!("values file {f}: no source with ref {r}"),
+            },
+            None => chart.join(f),
         };
         if !path.exists() {
             if ignore_missing {

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{info, warn};
 
-use crate::app::{self, CompareError, Comparison, Ctx, REFRESH, Settings};
+use crate::app::{self, CompareError, Comparison, Ctx, REFRESH, Settings, Sources};
 use crate::diff::merge_patch;
 use crate::kubeapi::Kind;
 use crate::sync::{self, Request, TaskResult};
@@ -262,6 +262,20 @@ fn set_condition(status: &mut serde_json::Map<String, Value>, ty: &str, message:
     status.insert("conditions".into(), Value::Array(conds));
 }
 
+/// status.sync.comparedTo: destination, source(s), ignoreDifferences.
+fn compared_to(app: &Value, src: &Sources) -> Value {
+    let mut m = serde_json::Map::new();
+    m.insert("destination".into(), app["spec"]["destination"].clone());
+    m.extend(src.status_fields());
+    if app["spec"]["ignoreDifferences"].is_array() {
+        m.insert(
+            "ignoreDifferences".into(),
+            app["spec"]["ignoreDifferences"].clone(),
+        );
+    }
+    Value::Object(m)
+}
+
 /// The status a comparison gives, on top of the stored one.
 fn status_from(
     ctx: &Ctx,
@@ -273,20 +287,30 @@ fn status_from(
     let mut s = old.clone();
     match cmp {
         Ok(c) => {
-            s.insert(
-                "sync".into(),
-                json!({
-                    "comparedTo": {"destination": app["spec"]["destination"], "source": app::spec_source(app)},
-                    "revision": c.revision,
-                    "status": if c.synced { "Synced" } else { "OutOfSync" },
-                }),
+            let src = Sources::of_app(app);
+            let mut sync = serde_json::Map::new();
+            sync.insert("comparedTo".into(), compared_to(app, &src));
+            sync.extend(src.revision_fields(&c.revisions));
+            sync.insert(
+                "status".into(),
+                json!(if c.synced { "Synced" } else { "OutOfSync" }),
             );
+            s.insert("sync".into(), Value::Object(sync));
             s.insert("health".into(), json!({"status": c.health.as_str()}));
             s.insert(
                 "resources".into(),
                 Value::Array(c.resources.iter().map(|r| r.to_json()).collect()),
             );
-            s.insert("sourceType".into(), json!(c.source_type.as_str()));
+            if src.multi {
+                s.remove("sourceType");
+                s.insert("sourceTypes".into(), json!(c.source_types));
+            } else {
+                s.remove("sourceTypes");
+                s.insert(
+                    "sourceType".into(),
+                    json!(c.source_types.first().cloned().unwrap_or_default()),
+                );
+            }
             s.insert("controllerNamespace".into(), json!(ctx.namespace));
             s.insert("resourceHealthSource".into(), json!("appTree"));
             let mut summary = serde_json::Map::new();
@@ -317,7 +341,7 @@ fn status_from(
         Err(CompareError::Comparison(msg)) => {
             s.insert(
                 "sync".into(),
-                json!({"comparedTo": {"destination": app["spec"]["destination"], "source": app::spec_source(app)}, "status": "Unknown"}),
+                json!({"comparedTo": compared_to(app, &Sources::of_app(app)), "status": "Unknown"}),
             );
             remove_conditions(&mut s, &["InvalidSpecError"]);
             set_condition(&mut s, "ComparisonError", msg);
@@ -425,7 +449,7 @@ impl AppTask {
                 .is_none_or(|t| t.elapsed() >= reconcile_every);
         let hard = refresh.as_deref() == Some("hard");
 
-        let (cmp, revision) = self.compare(&app, fresh, hard).await;
+        let (cmp, revisions) = self.compare(&app, fresh, hard).await;
         if fresh {
             self.last_fresh = Some(Instant::now());
         }
@@ -441,11 +465,15 @@ impl AppTask {
         }
         let periodic = Next::Wait(reconcile_every.max(Duration::from_secs(5)));
         let Ok(cmp) = cmp else { return Ok(periodic) };
-        match self.auto_sync(&app, &cmp, &revision) {
+        match self.auto_sync(&app, &cmp, &revisions) {
             AutoSync::No => Ok(periodic),
             AutoSync::Later(d) => Ok(Next::Wait(d.min(reconcile_every))),
             AutoSync::Now(op) => {
-                info!("app {}: automated sync to {revision}", self.name);
+                info!(
+                    "app {}: automated sync to {}",
+                    self.name,
+                    revisions.join(", ")
+                );
                 let app = self.patch(&json!({"operation": op})).await?;
                 self.operate(app).await?;
                 Ok(Next::Again)
@@ -458,35 +486,22 @@ impl AppTask {
         app: &Value,
         fresh: bool,
         hard: bool,
-    ) -> (Result<Comparison, CompareError>, String) {
+    ) -> (Result<Comparison, CompareError>, Vec<String>) {
         if let Err(e) = app::check_project(self.ctx(), app).await {
-            return (Err(e), String::new());
+            return (Err(e), Vec::new());
         }
-        if app["spec"]["sources"].is_array() {
-            return (
-                Err(CompareError::Comparison(
-                    "multiple sources are not supported by litecd yet".into(),
-                )),
-                String::new(),
-            );
-        }
-        let source = app::spec_source(app);
-        let revision = match app::resolve(self.ctx(), &source, fresh).await {
+        let src = Sources::of_app(app);
+        let revisions = match app::resolve_all(self.ctx(), &src, fresh).await {
             Ok(r) => r,
-            Err(e) => {
-                return (
-                    Err(CompareError::Comparison(format!("{e:#}"))),
-                    String::new(),
-                );
-            }
+            Err(e) => return (Err(CompareError::Comparison(format!("{e:#}"))), Vec::new()),
         };
         (
-            app::compare(self.ctx(), app, &source, &revision, hard).await,
-            revision,
+            app::compare(self.ctx(), app, &src, &revisions, hard).await,
+            revisions,
         )
     }
 
-    fn auto_sync(&self, app: &Value, cmp: &Comparison, revision: &str) -> AutoSync {
+    fn auto_sync(&self, app: &Value, cmp: &Comparison, revisions: &[String]) -> AutoSync {
         let policy = &app["spec"]["syncPolicy"];
         let auto = &policy["automated"];
         if !auto.is_object() || auto["enabled"].as_bool() == Some(false) || cmp.synced {
@@ -518,11 +533,13 @@ impl AppTask {
         if cmp.desired.is_empty() && auto["allowEmpty"].as_bool() != Some(true) {
             return AutoSync::No;
         }
-        let source = app::spec_source(app);
+        let src = Sources::of_app(app);
         let last = &app["status"]["operationState"];
-        let same =
-            last["syncResult"]["revision"] == revision && last["syncResult"]["source"] == source;
-        let mut sync = json!({"revision": revision, "source": source});
+        let same = src.same(revisions, &last["syncResult"]);
+        let mut sync = serde_json::Map::new();
+        sync.extend(src.revision_fields(revisions));
+        sync.extend(src.operation_fields());
+        let mut sync = Value::Object(sync);
         if prune {
             sync["prune"] = json!(true);
         }
@@ -598,23 +615,33 @@ impl AppTask {
             .write_status(&app, &Value::Object(status), None)
             .await?;
 
-        let source = if op["sync"]["source"].is_object() {
-            op["sync"]["source"].clone()
-        } else {
-            app::spec_source(&app)
-        };
-        let req = Request::from_operation(&op);
+        let src = Sources::of_operation(&op["sync"], &app);
+        let mut req = Request::from_operation(&op);
+        req.ignore = app::ignore_rules(&app, &*self.ctx().settings.read().await);
         let retry = op["retry"].clone();
         let limit = retry["limit"].as_i64().unwrap_or(0);
         let mut retries: i64 = 0;
+        let mut no_more_tasks = false;
         let (phase, message, results, revision) = loop {
-            let revision = match op["sync"]["revision"].as_str().filter(|r| !r.is_empty()) {
-                Some(r) => Ok(r.to_string()),
-                None => app::resolve(self.ctx(), &source, false).await,
+            let given: Option<Vec<String>> = if src.multi {
+                op["sync"]["revisions"].as_array().map(|r| {
+                    r.iter()
+                        .map(|x| x.as_str().unwrap_or_default().to_string())
+                        .collect()
+                })
+            } else {
+                op["sync"]["revision"]
+                    .as_str()
+                    .filter(|r| !r.is_empty())
+                    .map(|r| vec![r.to_string()])
+            };
+            let revision = match given {
+                Some(r) => Ok(r),
+                None => app::resolve_all(self.ctx(), &src, false).await,
             };
             let attempt = match revision {
-                Err(e) => Err((format!("{e:#}"), vec![], String::new())),
-                Ok(rev) => match app::compare(self.ctx(), &app, &source, &rev, false).await {
+                Err(e) => Err((format!("{e:#}"), vec![], Vec::new())),
+                Ok(rev) => match app::compare(self.ctx(), &app, &src, &rev, false).await {
                     Err(CompareError::Comparison(m) | CompareError::InvalidSpec(m)) => {
                         Err((m, vec![], rev))
                     }
@@ -624,11 +651,13 @@ impl AppTask {
                             op: op.clone(),
                             started: started.clone(),
                             retries,
-                            revision: rev.clone(),
-                            source: source.clone(),
+                            result_fields: result_fields(&src, &rev),
                         };
                         match sync::run(self.ctx(), &app, &cmp, &req, &mut progress).await {
-                            Ok(r) => Ok((r, rev)),
+                            Ok(done) => {
+                                no_more_tasks = done.no_more_tasks;
+                                Ok((done.results, rev))
+                            }
                             Err(f) => Err((f.message, f.results, rev)),
                         }
                     }
@@ -636,12 +665,12 @@ impl AppTask {
             };
             match attempt {
                 Ok((results, rev)) => {
-                    break (
-                        "Succeeded",
-                        "successfully synced (all tasks run)".to_string(),
-                        results,
-                        rev,
-                    );
+                    let msg = if no_more_tasks {
+                        "successfully synced (no more tasks)"
+                    } else {
+                        "successfully synced (all tasks run)"
+                    };
+                    break ("Succeeded", msg.to_string(), results, rev);
                 }
                 Err((msg, results, rev)) => {
                     if msg == sync::TERMINATED {
@@ -682,8 +711,10 @@ impl AppTask {
         let mut st = app["status"].as_object().cloned().unwrap_or_default();
         let mut state = json!({
             "operation": op, "phase": phase, "message": message, "startedAt": started, "finishedAt": app::now(),
-            "syncResult": {"resources": results.iter().map(TaskResult::to_json).collect::<Vec<_>>(), "revision": revision, "source": source},
         });
+        let mut result = result_fields(&src, &revision);
+        result["resources"] = json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        state["syncResult"] = result;
         if retries > 0 {
             state["retryCount"] = json!(retries);
         }
@@ -696,13 +727,20 @@ impl AppTask {
                 .cloned()
                 .unwrap_or_default();
             let last = history.last();
-            if last.is_none_or(|h| h["revision"] != revision.as_str() || h["source"] != source) {
+            if last.is_none_or(|h| !src.same(&revision, h)) {
                 let id = last
                     .and_then(|h| h["id"].as_i64())
                     .map(|i| i + 1)
                     .unwrap_or(0);
-                history.push(json!({"id": id, "revision": revision, "source": source, "initiatedBy": op["initiatedBy"],
-                                    "deployStartedAt": started, "deployedAt": app::now()}));
+                let mut entry = json!({"id": id, "initiatedBy": op["initiatedBy"], "deployStartedAt": started, "deployedAt": app::now()});
+                for (k, v) in src
+                    .revision_fields(&revision)
+                    .into_iter()
+                    .chain(src.status_fields())
+                {
+                    entry[k] = v;
+                }
+                history.push(entry);
                 let keep = app["spec"]["revisionHistoryLimit"].as_u64().unwrap_or(10) as usize;
                 if history.len() > keep {
                     history.drain(..history.len() - keep);
@@ -713,7 +751,10 @@ impl AppTask {
             set_condition(
                 &mut st,
                 "SyncError",
-                &format!("Failed last sync attempt to [{revision}]: {message}"),
+                &format!(
+                    "Failed last sync attempt to [{}]: {message}",
+                    revision.join(" ")
+                ),
             );
         }
         self.write_status(&app, &Value::Object(st), Some(json!({"operation": null})))
@@ -783,6 +824,18 @@ impl AppTask {
     }
 }
 
+/// syncResult without its resources: revision(s) and source(s); a
+/// multi-source one also has an empty revision and source, as Argo CD's.
+fn result_fields(src: &Sources, revs: &[String]) -> Value {
+    let mut m = serde_json::Map::new();
+    if src.multi {
+        m.insert("revision".into(), json!(""));
+    }
+    m.extend(src.revision_fields(revs));
+    m.extend(src.status_fields());
+    Value::Object(m)
+}
+
 enum AutoSync {
     No,
     Later(Duration),
@@ -796,8 +849,7 @@ struct OpProgress<'a> {
     op: Value,
     started: String,
     retries: i64,
-    revision: String,
-    source: Value,
+    result_fields: Value,
 }
 
 impl sync::Progress for OpProgress<'_> {
@@ -811,8 +863,9 @@ impl sync::Progress for OpProgress<'_> {
         }
         let (cmp, _) = t.compare(&app, false, false).await;
         let mut status = status_from(t.ctx(), &app, &cmp, false);
-        let mut state = json!({"operation": self.op, "phase": "Running", "startedAt": self.started, "message": message,
-            "syncResult": {"resources": results.iter().map(TaskResult::to_json).collect::<Vec<_>>(), "revision": self.revision, "source": self.source}});
+        let mut result = self.result_fields.clone();
+        result["resources"] = json!(results.iter().map(TaskResult::to_json).collect::<Vec<_>>());
+        let mut state = json!({"operation": self.op, "phase": "Running", "startedAt": self.started, "message": message, "syncResult": result});
         if self.retries > 0 {
             state["retryCount"] = json!(self.retries);
         }

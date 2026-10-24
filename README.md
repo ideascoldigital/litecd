@@ -5,13 +5,16 @@ GitOps continuous delivery in one small Rust binary that reads Argo CD's
 for small clusters (home labs, edge, [litek8s](https://github.com/jairoFernandez/litek8s)),
 where Argo CD's seven pods use more memory than the orchestrator itself.
 
-**Status: phase 1.** The controller syncs Applications and AppProjects
-from git directories, Helm charts (in git or a Helm repository) and Kustomize,
-with automated sync, prune, self-heal, sync waves, retries, the usual sync
-options, built-in and Lua health checks and the app-of-apps pattern, and
-writes the same `.status` Argo CD does: it passes all 16 phase 1 cases of the
-compatibility corpus ([compat/](compat/)), whose expected results come from
-Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
+**Status: phase 2, in progress.** The controller syncs Applications and
+AppProjects from git directories, Helm charts (in git or a Helm repository)
+and Kustomize, single or multiple sources (`$ref` value files), with
+automated sync, prune, self-heal, sync waves, hooks (PreSync, Sync,
+PostSync, SyncFail, Helm's install/upgrade hooks, delete policies),
+`ignoreDifferences` (JSON pointers, jq paths, field managers; from the app
+and argocd-cm), retries, the usual sync options, built-in and Lua health
+checks and the app-of-apps pattern, and writes the same `.status` Argo CD
+does: it passes all 19 cases of the compatibility corpus
+([compat/](compat/)), whose expected results come from Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
 
 On litek8s the controller process takes 8–9 MiB of RSS through the whole
 corpus and next to no CPU idle; Argo CD's pods take 359 MiB idle on the same

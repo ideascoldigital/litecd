@@ -83,13 +83,12 @@ so litecd is compared on the same kind of cluster.
 
 ## litecd
 
-2026-10-23, litecd at phase 1 on the same cluster (Argo CD uninstalled, its
-CRDs kept): 16/16 phase 1 cases equal their golden files, twice in a row.
-Phase 2 (not implemented yet): hooks differs (`successfully synced (no more
-tasks)`), ignore_differences and multi_source fail.
+2026-10-24, litecd with phase 1 and phase 2's hooks, multiple sources and
+ignoreDifferences, on a fresh cluster (Argo CD's CRDs only): 19/19 cases
+equal their golden files, twice in a row.
 
 ```bash
-deploy/build.sh && LITECD_MANIFEST=deploy/install compat/run.sh --target litecd --phases 1
+deploy/build.sh && LITECD_MANIFEST=deploy/install compat/run.sh --target litecd
 ```
 
 ## Baseline

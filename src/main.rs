@@ -6,6 +6,7 @@ mod check;
 mod controller;
 mod diff;
 mod health;
+mod ignore;
 mod kubeapi;
 mod render;
 mod repo;

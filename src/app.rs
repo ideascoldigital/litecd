@@ -11,6 +11,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::diff;
 use crate::health::{self, Customizations, Health, Status};
+use crate::ignore;
 use crate::kubeapi::{Kind, Kube, split_api_version};
 use crate::render::{self, SourceType};
 use crate::repo::{Creds, Repos};
@@ -37,6 +38,7 @@ pub struct Settings {
     pub tracking: Tracking,
     pub instance_label: String,
     pub health: Customizations,
+    pub ignore: Vec<ignore::Rule>,
     pub kustomize_build_options: String,
 }
 
@@ -47,6 +49,7 @@ impl Default for Settings {
             tracking: Tracking::Annotation,
             instance_label: INSTANCE_LABEL.into(),
             health: Customizations::default(),
+            ignore: Vec::new(),
             kustomize_build_options: String::new(),
         }
     }
@@ -79,6 +82,7 @@ impl Settings {
             s.instance_label = l.to_string();
         }
         s.health = Customizations::from_config(data);
+        s.ignore = ignore::from_config(data);
         s.kustomize_build_options = data
             .get("kustomize.buildOptions")
             .and_then(Value::as_str)
@@ -135,7 +139,7 @@ pub struct Ctx {
 }
 
 pub struct Rendered {
-    pub source_type: SourceType,
+    pub source_types: Vec<String>,
     pub objects: Vec<Value>,
 }
 
@@ -227,7 +231,10 @@ pub struct Desired {
     pub obj: Value,
     pub wave: i64,
     pub options: Vec<String>,
+    /// The sync phase of a hook: PreSync, Sync, PostSync or SyncFail.
     pub hook: Option<String>,
+    /// HookSucceeded, HookFailed, BeforeHookCreation (the default).
+    pub delete_policies: Vec<String>,
 }
 
 impl Desired {
@@ -293,10 +300,104 @@ impl ResourceState {
     }
 }
 
+/// An app's sources: `spec.source`, or `spec.sources` (multi-source).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sources {
+    pub multi: bool,
+    pub list: Vec<Value>,
+}
+
+impl Sources {
+    pub fn of_app(app: &Value) -> Sources {
+        match app["spec"]["sources"].as_array() {
+            Some(l) => Sources {
+                multi: true,
+                list: l.clone(),
+            },
+            None => Sources {
+                multi: false,
+                list: vec![app["spec"]["source"].clone()],
+            },
+        }
+    }
+
+    /// What an operation syncs: its own sources when it names them.
+    pub fn of_operation(sync: &Value, app: &Value) -> Sources {
+        if let Some(l) = sync["sources"].as_array() {
+            Sources {
+                multi: true,
+                list: l.clone(),
+            }
+        } else if sync["source"].is_object() {
+            Sources {
+                multi: false,
+                list: vec![sync["source"].clone()],
+            }
+        } else {
+            Sources::of_app(app)
+        }
+    }
+
+    /// `source` or `source` + `sources`, as Argo CD writes them in
+    /// comparedTo, syncResult and history (multi-source: an empty source).
+    pub fn status_fields(&self) -> serde_json::Map<String, Value> {
+        let mut m = serde_json::Map::new();
+        if self.multi {
+            m.insert("source".into(), json!({"repoURL": ""}));
+            m.insert("sources".into(), Value::Array(self.list.clone()));
+        } else {
+            m.insert("source".into(), self.list[0].clone());
+        }
+        m
+    }
+
+    /// `source` or `sources`, as in an operation.
+    pub fn operation_fields(&self) -> serde_json::Map<String, Value> {
+        let mut m = serde_json::Map::new();
+        if self.multi {
+            m.insert("sources".into(), Value::Array(self.list.clone()));
+        } else {
+            m.insert("source".into(), self.list[0].clone());
+        }
+        m
+    }
+
+    /// `revision` or `revisions`.
+    pub fn revision_fields(&self, revs: &[String]) -> serde_json::Map<String, Value> {
+        let mut m = serde_json::Map::new();
+        if self.multi {
+            m.insert("revisions".into(), json!(revs));
+        } else {
+            m.insert(
+                "revision".into(),
+                json!(revs.first().cloned().unwrap_or_default()),
+            );
+        }
+        m
+    }
+
+    /// Whether a stored syncResult or history entry is for these sources at
+    /// these revisions.
+    pub fn same(&self, revs: &[String], entry: &Value) -> bool {
+        if self.multi {
+            entry["revisions"] == json!(revs) && entry["sources"] == Value::Array(self.list.clone())
+        } else {
+            entry["revision"] == json!(revs.first().cloned().unwrap_or_default())
+                && entry["source"] == self.list[0]
+        }
+    }
+}
+
+/// A multi-source source that only lends its files (`ref`) to the others.
+pub fn is_ref_only(source: &Value) -> bool {
+    source["ref"].is_string() && !source["path"].is_string() && !source["chart"].is_string()
+}
+
 /// The result of comparing an app with the cluster.
 pub struct Comparison {
-    pub revision: String,
-    pub source_type: SourceType,
+    pub revisions: Vec<String>,
+    /// Per source; "" for a ref-only one.
+    pub source_types: Vec<String>,
     pub desired: Vec<Desired>,
     pub resources: Vec<ResourceState>,
     pub synced: bool,
@@ -376,6 +477,15 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
     best.map(|(_, c)| c)
 }
 
+/// The revisions all sources point at now.
+pub async fn resolve_all(ctx: &Ctx, sources: &Sources, fresh: bool) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for s in &sources.list {
+        out.push(resolve(ctx, s, fresh).await?);
+    }
+    Ok(out)
+}
+
 /// The revision a source points at now.
 pub async fn resolve(ctx: &Ctx, source: &Value, fresh: bool) -> Result<String> {
     let url = source["repoURL"].as_str().unwrap_or_default();
@@ -390,20 +500,66 @@ pub async fn resolve(ctx: &Ctx, source: &Value, fresh: bool) -> Result<String> {
         .await
 }
 
-/// Render a source at a revision (cached: a revision does not change).
+/// Render an app's sources at their revisions (cached: a revision does
+/// not change). Ref-only sources render nothing; their trees serve the
+/// others' `$<ref>/...` value files.
 pub async fn render(
     ctx: &Ctx,
     app: &Value,
-    source: &Value,
-    revision: &str,
+    sources: &Sources,
+    revisions: &[String],
     hard: bool,
 ) -> Result<Arc<Rendered>> {
     let name = app["metadata"]["name"].as_str().unwrap_or_default();
     let ns = destination_namespace(app);
-    let key = format!("{name}|{ns}|{revision}|{source}");
+    let key = format!("{name}|{ns}|{revisions:?}|{:?}", sources.list);
     if !hard && let Some(r) = ctx.manifests.lock().await.get(&key) {
         return Ok(r.clone());
     }
+    let mut refs = HashMap::new();
+    if sources.multi {
+        for (s, rev) in sources.list.iter().zip(revisions) {
+            if let Some(r) = s["ref"].as_str() {
+                let url = s["repoURL"].as_str().unwrap_or_default();
+                let creds = creds_for(ctx, url).await;
+                refs.insert(
+                    r.to_string(),
+                    ctx.repos.checkout(url, rev, creds.as_ref()).await?,
+                );
+            }
+        }
+    }
+    let mut out = Rendered {
+        source_types: Vec::new(),
+        objects: Vec::new(),
+    };
+    for (s, rev) in sources.list.iter().zip(revisions) {
+        if sources.multi && is_ref_only(s) {
+            out.source_types.push(String::new());
+            continue;
+        }
+        let (ty, objects) = render_one(ctx, app, s, rev, &refs).await?;
+        out.source_types.push(ty.as_str().to_string());
+        out.objects.extend(objects);
+    }
+    let r = Arc::new(out);
+    let mut cache = ctx.manifests.lock().await;
+    if cache.len() > 256 {
+        cache.clear();
+    }
+    cache.insert(key, r.clone());
+    Ok(r)
+}
+
+async fn render_one(
+    ctx: &Ctx,
+    app: &Value,
+    source: &Value,
+    revision: &str,
+    refs: &HashMap<String, std::path::PathBuf>,
+) -> Result<(SourceType, Vec<Value>)> {
+    let name = app["metadata"]["name"].as_str().unwrap_or_default();
+    let ns = destination_namespace(app);
     let url = source["repoURL"].as_str().unwrap_or_default();
     let creds = creds_for(ctx, url).await;
     let settings = ctx.settings.read().await.clone();
@@ -415,46 +571,35 @@ pub async fn render(
         cache: ctx.repos.cache_dir(),
         kustomize_build_options: settings.kustomize_build_options.clone(),
     };
-    let rendered = if let Some(chart) = source["chart"].as_str() {
+    if let Some(chart) = source["chart"].as_str() {
         let dir = ctx
             .repos
             .chart(url, chart, revision, creds.as_ref())
             .await?;
-        Rendered {
-            source_type: SourceType::Helm,
-            objects: render::helm_template(&dir, source, &cx, None).await?,
-        }
-    } else {
-        let tree = ctx.repos.checkout(url, revision, creds.as_ref()).await?;
-        let path = source["path"]
-            .as_str()
-            .unwrap_or(".")
-            .trim_start_matches('/');
-        let dir = tree.join(if path.is_empty() { "." } else { path });
-        if !dir.starts_with(&tree) || path.split('/').any(|p| p == "..") {
-            bail!("{path}: app path is outside the repository");
-        }
-        if !dir.is_dir() {
-            bail!("{path}: app path does not exist");
-        }
-        let ty = render::source_type(source, Some(&dir));
-        let objects = match ty {
-            SourceType::Directory => render::directory(&dir, &source["directory"])?,
-            SourceType::Helm => render::helm_template(&dir, source, &cx, Some(&tree)).await?,
-            SourceType::Kustomize => render::kustomize_build(&dir, &cx).await?,
-        };
-        Rendered {
-            source_type: ty,
-            objects,
-        }
-    };
-    let r = Arc::new(rendered);
-    let mut cache = ctx.manifests.lock().await;
-    if cache.len() > 256 {
-        cache.clear();
+        return Ok((
+            SourceType::Helm,
+            render::helm_template(&dir, source, &cx, refs).await?,
+        ));
     }
-    cache.insert(key, r.clone());
-    Ok(r)
+    let tree = ctx.repos.checkout(url, revision, creds.as_ref()).await?;
+    let path = source["path"]
+        .as_str()
+        .unwrap_or(".")
+        .trim_start_matches('/');
+    let dir = tree.join(if path.is_empty() { "." } else { path });
+    if !dir.starts_with(&tree) || path.split('/').any(|p| p == "..") {
+        bail!("{path}: app path is outside the repository");
+    }
+    if !dir.is_dir() {
+        bail!("{path}: app path does not exist");
+    }
+    let ty = render::source_type(source, Some(&dir));
+    let objects = match ty {
+        SourceType::Directory => render::directory(&dir, &source["directory"])?,
+        SourceType::Helm => render::helm_template(&dir, source, &cx, refs).await?,
+        SourceType::Kustomize => render::kustomize_build(&dir, &cx).await?,
+    };
+    Ok((ty, objects))
 }
 
 /// Normalize rendered objects: namespace for namespaced kinds, tracking.
@@ -488,10 +633,12 @@ pub async fn desired_objects(ctx: &Ctx, app: &Value, rendered: &Rendered) -> Vec
             }
         }
         let key = Key::of(&obj);
-        let hook = obj["metadata"]["annotations"][HOOK]
-            .as_str()
-            .map(str::to_string);
-        if hook.is_none() {
+        let (hook, delete_policies) = match hook_of(&obj) {
+            HookKind::None => (None, Vec::new()),
+            HookKind::Skip => continue,
+            HookKind::Phase(p, d) => (Some(p), d),
+        };
+        {
             let id = tracking_id(name, &key);
             let meta = obj["metadata"]
                 .as_object_mut()
@@ -517,9 +664,73 @@ pub async fn desired_objects(ctx: &Ctx, app: &Value, rendered: &Rendered) -> Vec
             kind,
             obj,
             hook,
+            delete_policies,
         });
     }
     out
+}
+
+enum HookKind {
+    None,
+    Skip,
+    Phase(String, Vec<String>),
+}
+
+/// Whether an object is a hook: Argo CD's annotation, else Helm's (mapped as
+/// Argo CD maps it; Helm's delete and rollback hooks are not applied).
+fn hook_of(obj: &Value) -> HookKind {
+    let ann = &obj["metadata"]["annotations"];
+    let list = |v: &Value| -> Vec<String> {
+        v.as_str()
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let argo = list(&ann[HOOK]);
+    let (phases, policies): (Vec<String>, Vec<String>) = if !argo.is_empty() {
+        (argo, list(&ann["argocd.argoproj.io/hook-delete-policy"]))
+    } else {
+        let helm = list(&ann["helm.sh/hook"]);
+        if helm.is_empty() {
+            return HookKind::None;
+        }
+        let phases: Vec<String> = helm
+            .iter()
+            .filter_map(|h| match h.as_str() {
+                "pre-install" | "pre-upgrade" => Some("PreSync".to_string()),
+                "post-install" | "post-upgrade" => Some("PostSync".to_string()),
+                _ => None,
+            })
+            .collect();
+        let policies = list(&ann["helm.sh/hook-delete-policy"])
+            .iter()
+            .filter_map(|p| match p.as_str() {
+                "hook-succeeded" => Some("HookSucceeded".to_string()),
+                "hook-failed" => Some("HookFailed".to_string()),
+                "before-hook-creation" => Some("BeforeHookCreation".to_string()),
+                _ => None,
+            })
+            .collect();
+        if phases.is_empty() {
+            return HookKind::Skip;
+        }
+        (phases, policies)
+    };
+    if phases.iter().any(|p| p == "Skip") {
+        return HookKind::Skip;
+    }
+    let phase = ["PreSync", "Sync", "PostSync", "SyncFail"]
+        .into_iter()
+        .find(|p| phases.iter().any(|x| x == p));
+    match phase {
+        Some(p) => HookKind::Phase(p.to_string(), policies),
+        // PostDelete and the like: not part of a sync.
+        None => HookKind::Skip,
+    }
 }
 
 /// The last-applied-configuration kubectl would write for `obj`.
@@ -538,19 +749,29 @@ pub fn with_last_applied(obj: &Value) -> Value {
 }
 
 /// Whether a live object matches the desired one.
-async fn in_sync(ctx: &Ctx, d: &Desired, live: &Value, ssa: bool) -> bool {
+async fn in_sync(
+    ctx: &Ctx,
+    d: &Desired,
+    live: &Value,
+    ssa: bool,
+    ignored: &[ignore::Path],
+) -> bool {
     let candidate = if ssa {
         d.obj.clone()
     } else {
         with_last_applied(&d.obj)
     };
-    let mut ok = diff::subset(&d.obj, live);
+    let (dn, ln) = (
+        ignore::without(&d.obj, ignored),
+        ignore::without(live, ignored),
+    );
+    let mut ok = diff::subset(&dn, &ln);
     if ok && !ssa {
         let last = live["metadata"]["annotations"][diff::LAST_APPLIED]
             .as_str()
             .and_then(|s| serde_json::from_str::<Value>(s).ok());
         if let Some(last) = last
-            && diff::stale(&last, &d.obj, live)
+            && diff::stale(&ignore::without(&last, ignored), &dn, &ln)
         {
             ok = false;
         }
@@ -579,7 +800,10 @@ async fn in_sync(ctx: &Ctx, d: &Desired, live: &Value, ssa: bool) -> bool {
         .apply(kind, ns, &d.key.name, &candidate, true)
         .await
     {
-        Ok(after) => diff::strip_volatile(&after) == diff::strip_volatile(live),
+        Ok(after) => {
+            ignore::without(&diff::strip_volatile(&after), ignored)
+                == ignore::without(&diff::strip_volatile(live), ignored)
+        }
         Err(_) => false,
     };
     let mut cache = ctx.dry_runs.lock().await;
@@ -712,11 +936,11 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
 pub async fn compare(
     ctx: &Ctx,
     app: &Value,
-    source: &Value,
-    revision: &str,
+    sources: &Sources,
+    revisions: &[String],
     hard: bool,
 ) -> Result<Comparison, CompareError> {
-    let rendered = render(ctx, app, source, revision, hard)
+    let rendered = render(ctx, app, sources, revisions, hard)
         .await
         .map_err(|e| CompareError::Comparison(format!("{e:#}")))?;
     let mut desired = desired_objects(ctx, app, &rendered).await;
@@ -740,6 +964,7 @@ pub async fn compare(
     let settings = ctx.settings.read().await.clone();
     let options = app_options(&app["spec"]["syncPolicy"]["syncOptions"]);
     let app_ssa = options.iter().any(|o| o == "ServerSideApply=true");
+    let rules = ignore_rules(app, &settings);
     let mut resources = Vec::new();
     let mut seen = BTreeSet::new();
     for d in desired.iter().filter(|d| d.hook.is_none()) {
@@ -756,12 +981,16 @@ pub async fn compare(
         };
         let ssa = app_ssa || d.has_option("ServerSideApply=true");
         let replace = d.has_option("Replace=true") || options.iter().any(|o| o == "Replace=true");
+        let ignored = ignore::ignored(&rules, &d.key, &d.obj, live.as_ref());
         let synced = match &live {
             Some(l) => {
                 if replace {
-                    diff::subset(&d.obj, l)
+                    diff::subset(
+                        &ignore::without(&d.obj, &ignored),
+                        &ignore::without(l, &ignored),
+                    )
                 } else {
-                    in_sync(ctx, d, l, ssa).await
+                    in_sync(ctx, d, l, ssa, &ignored).await
                 }
             }
             None => false,
@@ -862,8 +1091,8 @@ pub async fn compare(
         .iter()
         .any(|r| r.key.group == "argoproj.io" && r.key.kind == "Application");
     Ok(Comparison {
-        revision: revision.to_string(),
-        source_type: rendered.source_type,
+        revisions: revisions.to_vec(),
+        source_types: rendered.source_types.clone(),
         desired,
         resources,
         synced,
@@ -871,6 +1100,18 @@ pub async fn compare(
         images: imgs.into_iter().collect(),
         app_of_apps,
     })
+}
+
+/// The app's ignoreDifferences and argocd-cm's.
+pub fn ignore_rules(app: &Value, settings: &Settings) -> Vec<ignore::Rule> {
+    let mut rules: Vec<ignore::Rule> = app["spec"]["ignoreDifferences"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(ignore::Rule::from_spec)
+        .collect();
+    rules.extend(settings.ignore.iter().cloned());
+    rules
 }
 
 /// The live objects of a set of keys, for waiting on health.
@@ -921,6 +1162,34 @@ mod tests {
             .unwrap();
         let back: Value = serde_json::from_str(text).unwrap();
         assert_eq!(back, o);
+    }
+
+    #[test]
+    fn hooks_from_argo_and_helm_annotations() {
+        let h = |ann: Value| match hook_of(&json!({"metadata": {"annotations": ann}})) {
+            HookKind::None => "none".to_string(),
+            HookKind::Skip => "skip".to_string(),
+            HookKind::Phase(p, d) => format!("{p}{d:?}"),
+        };
+        assert_eq!(h(json!({})), "none");
+        assert_eq!(
+            h(json!({HOOK: "PreSync", "argocd.argoproj.io/hook-delete-policy": "HookSucceeded"})),
+            r#"PreSync["HookSucceeded"]"#
+        );
+        assert_eq!(h(json!({HOOK: "Skip"})), "skip");
+        assert_eq!(
+            h(
+                json!({"helm.sh/hook": "pre-install,pre-upgrade", "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"})
+            ),
+            r#"PreSync["BeforeHookCreation", "HookSucceeded"]"#
+        );
+        assert_eq!(h(json!({"helm.sh/hook": "post-install"})), "PostSync[]");
+        assert_eq!(h(json!({"helm.sh/hook": "pre-delete"})), "skip");
+        // Argo CD's annotation wins over Helm's.
+        assert_eq!(
+            h(json!({HOOK: "Sync", "helm.sh/hook": "pre-install"})),
+            "Sync[]"
+        );
     }
 
     #[test]
