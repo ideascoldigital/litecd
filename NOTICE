@@ -1,0 +1,11 @@
+litecd
+Copyright 2026 Jairo Fernandez
+
+This product includes files from Argo CD (https://github.com/argoproj/argo-cd),
+licensed under the Apache License, Version 2.0:
+
+- deploy/install/crds/application-crd.yaml and appproject-crd.yaml, the
+  CustomResourceDefinitions of Argo CD v3.5.5 (manifests/crds), unchanged.
+
+Argo and Argo CD are trademarks of The Linux Foundation. litecd is not
+affiliated with or endorsed by the Argo project.

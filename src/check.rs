@@ -131,7 +131,7 @@ pub fn check_text(file: &Path, text: &str) -> Result<Vec<Object>> {
 }
 
 /// The documents of a YAML stream: the text between `---` lines.
-fn documents(text: &str) -> Vec<&str> {
+pub(crate) fn documents(text: &str) -> Vec<&str> {
     let mut docs = Vec::new();
     let mut start = 0;
     let mut pos = 0;

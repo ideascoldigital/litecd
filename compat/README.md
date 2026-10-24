@@ -81,6 +81,17 @@ so litecd is compared on the same kind of cluster.
 | ignore_differences | 2 | `/spec/replicas` ignored with `RespectIgnoreDifferences` |
 | multi_source | 2 | chart from a Helm repository, values file from git (`$values`) |
 
+## litecd
+
+2026-10-23, litecd at phase 1 on the same cluster (Argo CD uninstalled, its
+CRDs kept): 16/16 phase 1 cases equal their golden files, twice in a row.
+Phase 2 (not implemented yet): hooks differs (`successfully synced (no more
+tasks)`), ignore_differences and multi_source fail.
+
+```bash
+deploy/build.sh && LITECD_MANIFEST=deploy/install compat/run.sh --target litecd --phases 1
+```
+
 ## Baseline
 
 2026-10-23, Argo CD v3.5.5 (chart 10.10.5) on litek8s 0.2.8 (`cluster.sh`,

@@ -52,7 +52,7 @@ One binary, one Deployment (one replica; a Lease when there are more).
 |---|---|---|
 | Kubernetes client | `kube-rs`, typed CRDs for the argoproj.io kinds | |
 | Cache | lazy informers: only the resource types that appear in some app's desired manifests; objects not carrying a litecd/Argo tracking id dropped on arrival | the main memory difference from Argo CD, which mirrors the cluster |
-| Git | `gix` (gitoxide), shallow fetch, a bare cache per repository, manifests cached by (revision, path, params) | `/api/webhook` with GitHub, Gitea and GitLab payloads (same path as argocd-server), polling as in `timeout.reconciliation` |
+| Git | the `git` CLI, as Argo CD's repo server runs it (auth, protocols and odd servers behave the same; `gix` would save the binary in the image), a bare cache per repository, trees by commit, manifests cached by (revision, path, params) | `/api/webhook` with GitHub, Gitea and GitLab payloads (same path as argocd-server), polling as in `timeout.reconciliation` |
 | Render: directory | native: YAML/JSON, `recurse`, `include`, `exclude` | jsonnet in phase 2 (`jrsonnet`) |
 | Render: Helm, Kustomize | run `helm template` / `kustomize build`, as Argo CD's repo server does | identical output; the image ships both binaries. A native Go-template + sprig engine is out of scope |
 | Helm repositories | `index.yaml`, OCI, chart cache | `values`, `valuesObject`, `valueFiles`, `parameters`, `releaseName`, `skipCrds`, multi-source `$ref` values |
@@ -66,7 +66,7 @@ One binary, one Deployment (one replica; a Lease when there are more).
 
 ## Phases
 
-0. **Compatibility corpus** (`compat/`): each case is a set of manifests and
+0. **Compatibility corpus** (done 2026-10-23, 19 cases) (`compat/`): each case is a set of manifests and
    expected outcomes, run against Argo CD (the baseline, as litek8s's
    `compat/baseline-k3d.sh`: every case must pass there) and against litecd,
    comparing the resulting objects and the Applications' status. Sources:
@@ -74,7 +74,7 @@ One binary, one Deployment (one replica; a Lease when there are more).
    litek8s's `examples/platform` (13 Applications: sync waves, Helm
    `valuesObject`, `Replace=true`, the refresh annotation, a repository Secret,
    a Gitea webhook).
-1. **MVP:** Application and AppProject; directory, Helm and Kustomize
+1. **MVP** (done 2026-10-23: 16/16 corpus cases): Application and AppProject; directory, Helm and Kustomize
    sources (`examples/platform` has Kustomize directories Argo CD detects by
    their `kustomization.yaml`); sync,
    prune, self-heal, waves, retry, `.operation`, refresh; built-in health and

@@ -1,0 +1,74 @@
+# litecd in the argocd namespace, where Argo CD's Applications, AppProjects,
+# argocd-cm and repository Secrets live. The CRDs next to this file are
+# Argo CD's own (v3.5.5, Apache-2.0), unchanged.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litecd
+  namespace: argocd
+---
+# Like Argo CD's application controller: it applies whatever the apps hold.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: litecd
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+  - nonResourceURLs: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: litecd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: litecd
+subjects:
+  - kind: ServiceAccount
+    name: litecd
+    namespace: argocd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litecd
+  namespace: argocd
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: litecd}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: litecd}
+    spec:
+      serviceAccountName: litecd
+      containers:
+        - name: litecd
+          image: litecd:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ARGOCD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - {name: HOME, value: /tmp/litecd}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - {name: cache, mountPath: /tmp/litecd}
+      volumes:
+        - name: cache
+          emptyDir: {}

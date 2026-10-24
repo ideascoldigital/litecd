@@ -16,3 +16,15 @@ clap = { version = "4.5.32", features = ["derive", "env"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34"
+kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "runtime"] }
+k8s-openapi = { version = "0.28", features = ["latest"] }
+tokio = { version = "1.44.1", features = ["full"] }
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mlua = { version = "0.12", features = ["lua51", "vendored", "serialize", "send"] }
+globset = "0.4"
+tar = "0.4"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+http = "1"
