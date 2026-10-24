@@ -1,8 +1,6 @@
-diff --git a/smoke.sh b/smoke.sh
-index 49b71b2..122d5cd 100755
 --- a/smoke.sh
 +++ b/smoke.sh
-@@ -14,6 +14,7 @@ git_provider="$(platform_get provider)"; git_provider="${git_provider:-gitea}"
+@@ -14,6 +14,7 @@
  gitops_repo="$(platform_get gitops_repo)"; gitops_repo="${gitops_repo:-gitops}"
  app_repo="$(platform_get app_repo)"; app_repo="${app_repo:-metaphor}"
  domain="$(platform_get domain)"; domain="${domain:-${DOMAIN:-localhost}}"
@@ -10,7 +8,7 @@ index 49b71b2..122d5cd 100755
  if [[ $git_provider == github && -z ${GITHUB_TOKEN:-} && -z ${GITHUB_TOKEN_FILE:-} ]]; then
    GITHUB_TOKEN="$(secret_value github-runner github-runner GITHUB_TOKEN)"
  fi
-@@ -101,10 +102,11 @@ sed 's/^/  /' <<<"$out"
+@@ -101,10 +102,11 @@
  port="$(kubectl -n traefik get svc traefik -o jsonpath='{.spec.ports[?(@.name=="websecure")].port}')"
  secret_value cert-manager platform-ca 'ca\.crt' >"$ca"
  deadline=$((SECONDS + timeout))
@@ -24,8 +22,6 @@ index 49b71b2..122d5cd 100755
    until code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$ca" "$url")" && [[ $code == 200 ]]; do
      if [[ $SECONDS -ge $deadline ]]; then echo "https: $url -> $code (timeout)"; exit 1; fi
      sleep 5
-diff --git a/up.sh b/up.sh
-index ba1b3f8..418a076 100755
 --- a/up.sh
 +++ b/up.sh
 @@ -21,6 +21,10 @@
@@ -39,7 +35,7 @@ index ba1b3f8..418a076 100755
  set -euo pipefail
  dir="$(cd "$(dirname "$0")" && pwd)"
  . "$dir/lib.sh"
-@@ -33,12 +37,19 @@ cluster="${CLUSTER_NAME:-mgmt}"
+@@ -33,12 +37,19 @@
  domain="${DOMAIN:-localhost}"
  http_port="${HTTP_PORT:-80}"
  https_port="${HTTPS_PORT:-443}"
@@ -59,7 +55,7 @@ index ba1b3f8..418a076 100755
  case "$git_provider" in
    gitea) ;;
    github) command -v gh >/dev/null || { echo "GIT_PROVIDER=github needs the gh CLI, logged in" >&2; exit 1; } ;;
-@@ -103,6 +114,31 @@ else
+@@ -103,6 +114,31 @@
    rm -f "$c/atlantis.yaml" "$render/atlantis.yaml"
    tofu_state_ns=github-iac
  fi
@@ -91,18 +87,17 @@ index ba1b3f8..418a076 100755
  https_suffix=""; [[ $https_port == 443 ]] || https_suffix=":$https_port"
  find "$render" \( -name '*.yaml' -o -name '*.tf' \) -exec perl -pi -e "s#<CLUSTER_NAME>#$cluster#g; s#<GITOPS_REPO_URL>#$repo_url#g;
    s#<DOMAIN_NAME>#$domain#g; s#<INGRESS_HTTP_PORT>#$http_port#g; s#<INGRESS_HTTPS_PORT>#$https_port#g;
-@@ -159,17 +195,25 @@ fi
+@@ -159,17 +195,25 @@
  
  # ---- Argo CD -------------------------------------------------------------------
  
 -# Once; then Argo CD manages itself from the repository.
 -if ! kubectl -n argocd get deploy argocd-server >/dev/null 2>&1; then
--  kubectl apply --server-side --force-conflicts -k "$render/registry/clusters/$cluster/components/argocd" >/dev/null
 +# Once; then Argo CD (or litecd) manages itself from the repository.
 +if [[ $cd_controller == litecd ]]; then
-+  if ! kubectl -n argocd get deploy litecd >/dev/null 2>&1; then
-+    kubectl apply --server-side --force-conflicts -k "$render/registry/clusters/$cluster/components/argocd" >/dev/null
-+  fi
++  # Every time: idempotent, and argocd-cm must carry the platform's health
++  # check before the registry's waves start.
+   kubectl apply --server-side --force-conflicts -k "$render/registry/clusters/$cluster/components/argocd" >/dev/null
 +  kubectl -n argocd rollout status deploy/litecd --timeout 10m >/dev/null
 +  echo "litecd: ready"
 +else
@@ -124,7 +119,7 @@ index ba1b3f8..418a076 100755
  
  # Read access to the gitops repository: a Gitea token of its own, or the
  # GitHub token.
-@@ -299,9 +343,15 @@ GitHub:  https://github.com/$owner/$gitops_repo and https://github.com/$owner/$a
+@@ -299,9 +343,15 @@
           (pull requests to $gitops_repo that change terraform/: tofu plan as a comment, apply on merge)
  EOF
  fi
