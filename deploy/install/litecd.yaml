@@ -64,6 +64,10 @@ spec:
             - name: ARGOCD_NAMESPACE
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - {name: HOME, value: /tmp/litecd}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
             limits: {memory: 512Mi}
@@ -72,3 +76,15 @@ spec:
       volumes:
         - name: cache
           emptyDir: {}
+---
+# Git providers send pushes to argocd-server's /api/webhook: the same name,
+# so webhooks made for Argo CD keep working.
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  selector: {app.kubernetes.io/name: litecd}
+  ports:
+    - {name: http, port: 80, targetPort: http}

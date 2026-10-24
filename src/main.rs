@@ -10,6 +10,7 @@ mod kubeapi;
 mod render;
 mod repo;
 mod sync;
+mod webhook;
 
 use std::path::PathBuf;
 
@@ -45,6 +46,9 @@ enum Command {
         /// Where repositories, charts and rendered trees are cached
         #[arg(long, env = "LITECD_CACHE_DIR", default_value = "/tmp/litecd")]
         cache_dir: PathBuf,
+        /// Where Git providers send pushes (`/api/webhook`, as argocd-server takes them); empty: none
+        #[arg(long, env = "LITECD_LISTEN", default_value = "0.0.0.0:8080")]
+        listen: String,
     },
 }
 
@@ -59,6 +63,7 @@ fn main() -> Result<()> {
         Command::Controller {
             namespace,
             cache_dir,
+            listen,
         } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -83,7 +88,23 @@ fn main() -> Result<()> {
                 let settings = app::Settings::from_config(cm.as_ref());
                 let repos = repo::Repos::new(cache_dir);
                 let ctx = std::sync::Arc::new(app::Ctx::new(kube, repos, namespace, settings));
-                controller::Controller::new(ctx).run().await
+                if !listen.is_empty() {
+                    let c = ctx.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = webhook::serve(c, &listen).await {
+                            tracing::error!("webhooks: {e:#}");
+                        }
+                    });
+                }
+                // Exit at once on SIGTERM: an old pod that kept reconciling
+                // during a rollout would fight the new one.
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                tokio::select! {
+                    r = controller::Controller::new(ctx).run() => r,
+                    _ = term.recv() => Ok(()),
+                    _ = tokio::signal::ctrl_c() => Ok(()),
+                }
             })?;
         }
         Command::Check { paths, output } => {

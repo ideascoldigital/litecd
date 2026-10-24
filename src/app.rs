@@ -184,6 +184,21 @@ impl Key {
     }
 }
 
+/// `helm.sh/hook: test` (or the older test-success / test-failure).
+pub fn is_helm_test(obj: &Value) -> bool {
+    obj["metadata"]["annotations"]["helm.sh/hook"]
+        .as_str()
+        .is_some_and(|h| h.split(',').any(|h| h.trim().starts_with("test")))
+}
+
+/// Whether a resource is the app's own Application.
+pub fn is_self(app: &Value, k: &Key) -> bool {
+    k.group == "argoproj.io"
+        && k.kind == "Application"
+        && app["metadata"]["name"] == k.name.as_str()
+        && app["metadata"]["namespace"] == k.namespace.as_str()
+}
+
 /// The tracking id Argo CD writes: `<app>:<group>/<Kind>:<namespace>/<name>`.
 pub fn tracking_id(app: &str, k: &Key) -> String {
     format!("{app}:{}/{}:{}/{}", k.group, k.kind, k.namespace, k.name)
@@ -449,6 +464,10 @@ pub async fn desired_objects(ctx: &Ctx, app: &Value, rendered: &Rendered) -> Vec
     let settings = ctx.settings.read().await;
     let mut out = Vec::new();
     for o in &rendered.objects {
+        // Helm test hooks are for `helm test`: Argo CD never applies them.
+        if is_helm_test(o) {
+            continue;
+        }
         let mut obj = o.clone();
         let api = obj["apiVersion"].as_str().unwrap_or_default().to_string();
         let kind_name = obj["kind"].as_str().unwrap_or_default().to_string();
@@ -748,6 +767,9 @@ pub async fn compare(
             None => false,
         };
         let health = match &live {
+            // An app that manages its own Application: Argo CD does not
+            // assess that one's health (it would wait on itself).
+            Some(_) if is_self(app, &d.key) => None,
             Some(l) => health::assess(l, &settings.health).unwrap_or_else(|e| {
                 Some(Health {
                     status: Status::Unknown,
@@ -899,6 +921,20 @@ mod tests {
             .unwrap();
         let back: Value = serde_json::from_str(text).unwrap();
         assert_eq!(back, o);
+    }
+
+    #[test]
+    fn helm_tests_are_not_applied() {
+        assert!(is_helm_test(
+            &json!({"metadata": {"annotations": {"helm.sh/hook": "test"}}})
+        ));
+        assert!(is_helm_test(
+            &json!({"metadata": {"annotations": {"helm.sh/hook": "pre-install,test-success"}}})
+        ));
+        assert!(!is_helm_test(
+            &json!({"metadata": {"annotations": {"helm.sh/hook": "pre-install"}}})
+        ));
+        assert!(!is_helm_test(&json!({"metadata": {}})));
     }
 
     #[test]

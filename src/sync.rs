@@ -356,7 +356,7 @@ pub async fn run(
                     if r.status == "SyncFailed" && failed.is_none() {
                         failed = Some(r.message.clone());
                     }
-                    if r.status != "SyncFailed" {
+                    if r.status != "SyncFailed" && !app::is_self(app_obj, &d.key) {
                         applied.push(d);
                     }
                     results.push(r);
