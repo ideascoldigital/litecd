@@ -15,10 +15,12 @@ Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
 
 On litek8s the controller process takes 8–9 MiB of RSS through the whole
 corpus and next to no CPU idle; Argo CD's pods take 359 MiB idle on the same
-kind of cluster. litek8s's GitOps platform example (`examples/platform`,
-`CD_CONTROLLER=litecd`: 12 Applications in waves, Helm charts, Kustomize,
-an app of apps that manages itself, Gitea webhooks) comes up with litecd in
-Argo CD's place and passes its whole smoke test, at 28 MiB.
+kind of cluster. litek8s's GitOps platform example (12 Applications in
+waves, Helm charts, Kustomize, an app of apps that manages itself, Gitea
+webhooks, CI, Atlantis) comes up with litecd in Argo CD's place and passes
+its whole smoke test, at 28 MiB against Argo CD's 723 MiB:
+`e2e/platform.sh` (a patch on a copy of litek8s's `examples/platform`;
+litek8s itself does not know litecd).
 
 Pushes: litecd answers `/api/webhook` (GitHub, Gitea, Gogs, GitLab) behind
 a Service named `argocd-server`, so webhooks made for Argo CD keep working.

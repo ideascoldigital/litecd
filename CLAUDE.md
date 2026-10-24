@@ -19,6 +19,8 @@ compat/cluster.sh up && eval "$(compat/cluster.sh env)"
 LITECD_MANIFEST=deploy/install compat/run.sh --target litecd --phases 1
 ```
 
+`e2e/platform.sh`: litek8s's examples/platform with litecd in Argo CD's place (`e2e/platform.patch` applied to a copy; never add litecd to the litek8s repository).
+
 A change to the status litecd writes must keep every phase 1 corpus case equal to its golden file; golden files only ever come from Argo CD (`--target argocd --update-golden`).
 
 ## Conventions
