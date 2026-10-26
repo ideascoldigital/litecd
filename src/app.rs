@@ -368,6 +368,9 @@ pub struct ResourceState {
     pub health: Option<Health>,
     /// The other app whose tracking metadata the live object carries.
     pub shared_with: Option<String>,
+    /// Out of sync: what git wants and the live object cut to its fields
+    /// (null when one is missing), for the published diff.
+    pub diff: Option<(Value, Value)>,
 }
 
 impl ResourceState {
@@ -1183,6 +1186,26 @@ pub async fn compare(
             .as_ref()
             .and_then(|l| owner(l, &settings))
             .filter(|o| *o != name);
+        let diff = (!synced).then(|| {
+            let mut want = ignore::without(&d.obj, &ignored);
+            if let Some(m) = want.as_object_mut() {
+                m.remove("status");
+            }
+            let mut have = match &live {
+                Some(l) => {
+                    // Fields the last apply set and git dropped show too.
+                    let last = (!ssa)
+                        .then(|| l["metadata"]["annotations"][diff::LAST_APPLIED].as_str())
+                        .flatten()
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or(Value::Null);
+                    diff::project(&diff::union(&want, &last), &ignore::without(l, &ignored))
+                }
+                None => Value::Null,
+            };
+            diff::mask_secrets(&mut want, &mut have);
+            (want, have)
+        });
         resources.push(ResourceState {
             key: d.key.clone(),
             version: d.version.clone(),
@@ -1192,6 +1215,7 @@ pub async fn compare(
             live,
             health,
             shared_with,
+            diff,
         });
     }
     // What the app managed before and git no longer has: prune candidates.
@@ -1223,6 +1247,9 @@ pub async fn compare(
         }
         seen.insert(key.clone());
         let health = health::assess(&live, &settings.health).ok().flatten();
+        let mut have = diff::strip_volatile(&live);
+        diff::mask_secrets(&mut Value::Null, &mut have);
+        let diff = Some((Value::Null, have));
         resources.push(ResourceState {
             wave: wave_of(&live),
             key,
@@ -1232,6 +1259,7 @@ pub async fn compare(
             live: Some(live),
             health,
             shared_with: None,
+            diff,
         });
     }
     resources.sort_by(|a, b| a.key.cmp(&b.key));

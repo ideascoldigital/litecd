@@ -99,7 +99,13 @@ One binary, one Deployment (one replica; a Lease when there are more).
    (bench/RESULTS.md).
 4. **UX:** an Applications view (tree, diff, sync) in `litek8s ui` and MCP
    tools, both through the Kubernetes API only; the `argocd` CLI's gRPC API if
-   people ask for it.
+   people ask for it. The diff: the controller publishes each app that is not
+   in sync as a Secret `<app>.diff` in the app's namespace (label
+   `gitops.litek8s.dev/diff=true`, owned by the Application, key `diff.json`:
+   `{revisions, resources: [{group, version, kind, namespace, name, status,
+   desired, live, omitted?}]}`, `live` cut to the fields git and last-applied
+   set, Secret values masked, the biggest resources `omitted` past 900 KiB),
+   written when it changes, deleted once the app is in sync (done 2026-10-26).
 
 ## Risks
 

@@ -85,6 +85,7 @@ impl Controller {
                 name,
                 instance: instance.clone(),
                 last_fresh: None,
+                published: None,
             };
             task.run(rx).await;
             me.apps.lock().await.remove(&instance);
@@ -289,7 +290,80 @@ struct AppTask {
     /// What its resources are tracked by (app::instance_name).
     instance: String,
     last_fresh: Option<Instant>,
+    /// What the app's diff Secret holds (a hash; none: not known yet).
+    published: Option<u64>,
 }
+
+/// Most bytes of a diff document; past it, the biggest resources keep only
+/// their names.
+const DIFF_MAX: usize = 900 * 1024;
+
+/// The diff Secret's name: `<app>.diff`, if that is a valid name.
+fn diff_secret_name(app: &str) -> Option<String> {
+    let n = format!("{app}.diff");
+    (n.len() <= 253).then_some(n)
+}
+
+/// What is out of sync, for tools that show a diff: per resource what git
+/// wants (`desired`) and the live object cut to those fields (`live`), null
+/// for the side that does not exist. None when everything is in sync.
+fn diff_document(cmp: &Comparison, revisions: &[String]) -> Option<Value> {
+    let mut resources: Vec<Value> = cmp
+        .resources
+        .iter()
+        .filter_map(|r| {
+            let (desired, live) = r.diff.as_ref()?;
+            let status = if r.requires_pruning {
+                "Prune"
+            } else if live.is_null() {
+                "Missing"
+            } else {
+                "OutOfSync"
+            };
+            Some(json!({"group": r.key.group, "version": r.version, "kind": r.key.kind, "namespace": r.key.namespace,
+                "name": r.key.name, "status": status, "desired": desired, "live": live}))
+        })
+        .collect();
+    if resources.is_empty() {
+        return None;
+    }
+    let size = |v: &Value| v["desired"].to_string().len() + v["live"].to_string().len();
+    let mut total: usize = resources.iter().map(size).sum();
+    while total > DIFF_MAX {
+        let Some(big) = resources
+            .iter_mut()
+            .filter(|r| r["omitted"] != true)
+            .max_by_key(|r| size(r))
+        else {
+            break;
+        };
+        total -= size(big);
+        big["desired"] = Value::Null;
+        big["live"] = Value::Null;
+        big["omitted"] = json!(true);
+    }
+    Some(json!({"revisions": revisions, "resources": resources}))
+}
+
+fn diff_secret(app: &Value, name: &str, doc: &Value) -> Value {
+    use base64::Engine as _;
+    let meta = &app["metadata"];
+    json!({
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": name,
+            "namespace": meta["namespace"],
+            "labels": {DIFF_LABEL: "true"},
+            "ownerReferences": [{"apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "name": meta["name"], "uid": meta["uid"]}],
+        },
+        "type": "Opaque",
+        "data": {"diff.json": base64::engine::general_purpose::STANDARD.encode(doc.to_string())},
+    })
+}
+
+/// The label of diff Secrets.
+pub const DIFF_LABEL: &str = "gitops.litek8s.dev/diff";
 
 /// A Kubernetes duration for retry backoffs ("5s", "3m").
 fn backoff_delay(retry: &Value, attempt: u32) -> Duration {
@@ -575,6 +649,11 @@ impl AppTask {
         let status = status_from(self.ctx(), &app, &cmp, fresh);
         let extra = refresh.map(|_| json!({"metadata": {"annotations": {REFRESH: null}}}));
         let app = self.write_status(&app, &status, extra).await?;
+        if let Ok(c) = &cmp
+            && let Err(e) = self.publish_diff(&app, c, &revisions).await
+        {
+            warn!("app {}: diff: {e:#}", self.instance);
+        }
         if let Ok(c) = &cmp {
             let server = self
                 .ctx()
@@ -609,6 +688,45 @@ impl AppTask {
                 Ok(Next::Again)
             }
         }
+    }
+
+    /// Keep the app's diff Secret (`<app>.diff`, next to it) to what is out
+    /// of sync now, written only when that changed; none when in sync.
+    async fn publish_diff(
+        &mut self,
+        app: &Value,
+        cmp: &Comparison,
+        revisions: &[String],
+    ) -> Result<()> {
+        let name = diff_secret_name(&self.name);
+        let doc = diff_document(cmp, revisions);
+        let hash = doc.as_ref().map(|d| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            d.to_string().hash(&mut h);
+            h.finish()
+        });
+        let hash = hash.unwrap_or(0);
+        if self.published == Some(hash) || name.is_none() {
+            return Ok(());
+        }
+        let (name, ctx) = (name.unwrap(), self.ctx());
+        let kind = ctx.kube.kind("v1", "Secret").await?;
+        match doc {
+            Some(d) => {
+                let secret = diff_secret(app, &name, &d);
+                ctx.kube
+                    .apply(&kind, Some(&self.ns), &name, &secret, false)
+                    .await?;
+            }
+            None => {
+                ctx.kube
+                    .delete(&kind, Some(&self.ns), &name, "Background")
+                    .await?
+            }
+        }
+        self.published = Some(hash);
+        Ok(())
     }
 
     /// Whether the project's sync windows let a sync of `app` run now.
