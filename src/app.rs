@@ -580,10 +580,12 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
         };
         match ty {
             "repository" if u == want => return Some(c),
-            "repo-creds" if !u.is_empty() && want.starts_with(&u) => {
-                if best.as_ref().is_none_or(|(l, _)| u.len() > *l) {
-                    best = Some((u.len(), c));
-                }
+            "repo-creds"
+                if !u.is_empty()
+                    && want.starts_with(&u)
+                    && best.as_ref().is_none_or(|(l, _)| u.len() > *l) =>
+            {
+                best = Some((u.len(), c));
             }
             _ => {}
         }
