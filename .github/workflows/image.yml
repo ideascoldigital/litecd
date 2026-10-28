@@ -1,0 +1,57 @@
+# Builds the litecd image and pushes it to GHCR, so clusters with more than
+# one node pull it from a registry instead of deploy/build.sh's local image.
+# Tags: the commit SHA always; `latest` on main.
+name: image
+
+on:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - "src/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "vendor/**"
+      - "deploy/Dockerfile"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/litecd
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/litecd-target
+          key: musl-${{ hashFiles('Cargo.lock') }}
+          restore-keys: musl-
+      # The static musl binary, as deploy/build.sh makes it.
+      - name: build
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work -v /tmp/litecd-target:/cache \
+            -e CARGO_TARGET_DIR=/cache/target rust:1-alpine sh -c \
+            'apk add --no-cache musl-dev gcc make >/dev/null && cargo build --release --locked'
+          mkdir -p ctx && cp deploy/Dockerfile ctx/ && sudo cp /tmp/litecd-target/target/release/litecd ctx/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: push
+        run: |
+          tags="-t $IMAGE:${GITHUB_SHA}"
+          [ "$GITHUB_REF" = refs/heads/main ] && tags="$tags -t $IMAGE:latest"
+          docker build $tags ctx
+          docker push --all-tags "$IMAGE"
