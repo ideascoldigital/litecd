@@ -246,15 +246,6 @@ pub async fn helm_template(
         .as_str()
         .filter(|s| !s.is_empty())
         .unwrap_or(cx.app_name);
-    // Dependencies not vendored in charts/: build them as Argo CD does.
-    let chart_yaml = std::fs::read_to_string(chart.join("Chart.yaml")).unwrap_or_default();
-    if chart_yaml.contains("dependencies:") && !chart.join("charts").exists() {
-        run_command(
-            helm(cx.cache).arg("dependency").arg("build").arg(chart),
-            "helm dependency build",
-        )
-        .await?;
-    }
     let mut cmd = helm(cx.cache);
     cmd.arg("template")
         .arg(release)
@@ -343,11 +334,67 @@ pub async fn helm_template(
         };
         cmd.args([flag, &format!("{name}={value}")]);
     }
-    let out = run_command(&mut cmd, "helm template").await;
+    let mut out = run_command(&mut cmd, "helm template").await;
+    // Dependencies missing from charts/: build them and template again, as
+    // Argo CD's repo server does.
+    if out
+        .as_ref()
+        .is_err_and(|e| is_missing_dependency(&format!("{e:#}")))
+    {
+        out = match dependency_build(chart, cx).await {
+            Ok(()) => run_command(&mut cmd, "helm template").await,
+            Err(e) => Err(e),
+        };
+    }
     if !tmp.as_os_str().is_empty() {
         let _ = std::fs::remove_file(&tmp);
     }
     parse_manifests(&String::from_utf8_lossy(&out?))
+}
+
+/// Helm's words for a dependency Chart.yaml lists that charts/ lacks.
+fn is_missing_dependency(err: &str) -> bool {
+    err.contains("found in Chart.yaml, but missing in charts/ directory")
+        || err.contains("found in requirements.yaml, but missing in charts/ directory")
+}
+
+/// The Helm repositories (http or https) a chart's dependencies name by URL.
+fn dependency_repos(chart_yaml: &str) -> Vec<String> {
+    let v: Value = serde_yaml::from_str(chart_yaml).unwrap_or_default();
+    let mut out: Vec<String> = v["dependencies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| d["repository"].as_str())
+        .filter(|r| r.starts_with("http://") || r.starts_with("https://"))
+        .map(|r| r.trim_end_matches('/').to_string())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// `helm dependency build`, after `helm repo add` of each repository the
+/// dependencies name by URL (`dependency build` only reads repositories it
+/// knows), as Argo CD's repo server does.
+async fn dependency_build(chart: &Path, cx: &RenderCtx<'_>) -> Result<()> {
+    let chart_yaml = std::fs::read_to_string(chart.join("Chart.yaml")).unwrap_or_default();
+    for url in dependency_repos(&chart_yaml) {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&url, &mut h);
+        let name = format!("litecd-{:016x}", std::hash::Hasher::finish(&h));
+        run_command(
+            helm(cx.cache).args(["repo", "add", "--force-update", &name, &url]),
+            &format!("helm repo add {url}"),
+        )
+        .await?;
+    }
+    run_command(
+        helm(cx.cache).arg("dependency").arg("build").arg(chart),
+        "helm dependency build",
+    )
+    .await?;
+    Ok(())
 }
 
 /// `kustomize build` of a directory; with the source's kustomize options
@@ -535,6 +582,15 @@ fn unique() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn helm_dependency_repos() {
+        let y = "dependencies:\n  - {name: a, repository: http://cm.svc:8080/}\n  - {name: b, repository: 'http://cm.svc:8080'}\n  - {name: c, repository: file://charts/c}\n  - {name: d, repository: oci://ghcr.io/x}\n  - {name: e, repository: '@stable'}\n";
+        assert_eq!(super::dependency_repos(y), vec!["http://cm.svc:8080"]);
+        assert!(super::is_missing_dependency(
+            "helm template: Error: An error occurred while checking for chart dependencies. You may need to run `helm dependency build` to fetch missing dependencies: found in Chart.yaml, but missing in charts/ directory: a"
+        ));
+    }
+
     use super::*;
     use serde_json::json;
 
