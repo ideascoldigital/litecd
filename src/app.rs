@@ -968,7 +968,10 @@ async fn in_sync(
             ignore::without(&diff::strip_volatile(&after), ignored)
                 == ignore::without(&diff::strip_volatile(live), ignored)
         }
-        Err(_) => false,
+        Err(e) => {
+            tracing::debug!("dry run of {}: {e:#}", tracking_id("", &d.key));
+            false
+        }
     };
     let mut cache = ctx.dry_runs.lock().await;
     if cache.len() > 4096 {

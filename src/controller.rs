@@ -793,6 +793,20 @@ impl AppTask {
                 warn!("observe {}: DIFFERS from stored: {report}", self.instance);
             }
             self.observed = Some(report);
+            if let Ok(c) = &cmp {
+                for r in c.resources.iter().filter(|r| !r.synced) {
+                    if let Some((want, live)) = &r.diff {
+                        tracing::debug!(
+                            "observe {}: {}/{} {}/{}: desired {want} live {live}",
+                            self.instance,
+                            r.key.group,
+                            r.key.kind,
+                            r.key.namespace,
+                            r.key.name
+                        );
+                    }
+                }
+            }
         }
         if let Ok(c) = &cmp {
             let server = self
