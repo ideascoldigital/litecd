@@ -42,6 +42,9 @@ synced in 3.3 s against 5.7 s, single syncs and heals as fast.
 
 Pushes: litecd answers `/api/webhook` (GitHub, Gitea, Gogs, GitLab) behind
 a Service named `argocd-server`, so webhooks made for Argo CD keep working.
+Signatures are checked as Argo CD checks them, against `argocd-secret`'s
+`webhook.github.secret`, `webhook.gogs.secret` (Gitea and Gogs) and
+`webhook.gitlab.secret`; a provider without a secret takes any push.
 
 ## Install
 
