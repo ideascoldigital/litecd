@@ -87,6 +87,7 @@ so litecd is compared on the same kind of cluster.
 | sync_waves | 1 | waves -1, 0, 1, 5 in order |
 | prune_selfheal | 1 | prune a removed file; heal a deleted and a scaled Deployment |
 | no_prune | 1 | automated without prune: OutOfSync, resource kept |
+| cluster_scoped | 1 | a ClusterRole (tracking id in the destination namespace) and a CRD (untracked); Synced again after a hard refresh |
 | manual_sync | 1 | no automation: OutOfSync + Missing, then an `operation` |
 | sync_options | 1 | `Prune=false`, `Replace=true`, `Validate=false` |
 | server_side_apply | 1 | `ServerSideApply=true`, field manager `argocd-controller` |
