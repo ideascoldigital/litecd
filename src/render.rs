@@ -594,6 +594,65 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// An umbrella as the gitops repositories write them: one subchart vendored
+    /// under charts/ and one more to fetch (charts/ exists, so the old check skipped the build).
+    #[tokio::test]
+    async fn builds_dependencies_next_to_vendored_ones() {
+        if std::process::Command::new("helm")
+            .arg("version")
+            .output()
+            .is_err()
+        {
+            eprintln!("helm not installed: skipped");
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("litecd-helmdeps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let files = [
+            (
+                "umbrella/Chart.yaml",
+                "apiVersion: v2\nname: umbrella\nversion: 0.1.0\ndependencies:\n- {name: db, version: 1.0.0, repository: \"file://charts/db\"}\n- {name: app, version: 2.0.0, repository: \"file://../app\"}\n",
+            ),
+            (
+                "umbrella/charts/db/Chart.yaml",
+                "apiVersion: v2\nname: db\nversion: 1.0.0\n",
+            ),
+            (
+                "umbrella/charts/db/templates/cm.yaml",
+                "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: db}\n",
+            ),
+            (
+                "app/Chart.yaml",
+                "apiVersion: v2\nname: app\nversion: 2.0.0\n",
+            ),
+            (
+                "app/templates/cm.yaml",
+                "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: app}\n",
+            ),
+        ];
+        for (p, body) in files {
+            let f = tmp.join(p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, body).unwrap();
+        }
+        let cache = tmp.join("cache");
+        let cx = RenderCtx {
+            app_name: "umbrella",
+            namespace: "default",
+            kube_version: String::new(),
+            api_versions: Vec::new(),
+            cache: &cache,
+            kustomize_build_options: String::new(),
+        };
+        let objs = helm_template(&tmp.join("umbrella"), &json!({}), &cx, &Default::default())
+            .await
+            .unwrap();
+        let mut got = names(&objs);
+        got.sort();
+        assert_eq!(got, ["app", "db"]);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     fn names(objs: &[Value]) -> Vec<&str> {
         objs.iter()
             .map(|o| o["metadata"]["name"].as_str().unwrap())
