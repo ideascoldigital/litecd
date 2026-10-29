@@ -577,9 +577,12 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
         let c = Creds {
             username: decode(s, "username"),
             password: decode(s, "password"),
+            ssh_private_key: decode(s, "sshPrivateKey"),
+            insecure: decode(s, "insecure") == "true",
+            known_hosts: String::new(),
         };
         match ty {
-            "repository" if u == want => return Some(c),
+            "repository" if u == want => return Some(with_known_hosts(ctx, c).await),
             "repo-creds"
                 if !u.is_empty()
                     && want.starts_with(&u)
@@ -590,7 +593,29 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
             _ => {}
         }
     }
-    best.map(|(_, c)| c)
+    match best {
+        Some((_, c)) => Some(with_known_hosts(ctx, c).await),
+        None => None,
+    }
+}
+
+/// SSH credentials check host keys against argocd-ssh-known-hosts-cm.
+async fn with_known_hosts(ctx: &Ctx, mut c: Creds) -> Creds {
+    if c.ssh_private_key.is_empty() || c.insecure {
+        return c;
+    }
+    if let Some(k) = ctx.kube.known("v1", "ConfigMap").await
+        && let Ok(Some(cm)) = ctx
+            .kube
+            .get(&k, Some(&ctx.namespace), "argocd-ssh-known-hosts-cm")
+            .await
+    {
+        c.known_hosts = cm["data"]["ssh_known_hosts"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+    }
+    c
 }
 
 /// The revisions all sources point at now.

@@ -17,6 +17,12 @@ use tokio::sync::Mutex;
 pub struct Creds {
     pub username: String,
     pub password: String,
+    /// `sshPrivateKey`: for git over SSH.
+    pub ssh_private_key: String,
+    /// `insecure`: SSH host keys are not checked.
+    pub insecure: bool,
+    /// argocd-ssh-known-hosts-cm's `ssh_known_hosts`.
+    pub known_hosts: String,
 }
 
 pub struct Repos {
@@ -70,7 +76,7 @@ impl Repos {
             .clone()
     }
 
-    fn git(&self, creds: Option<&Creds>) -> Command {
+    fn git(&self, creds: Option<&Creds>) -> Result<Command> {
         let mut c = Command::new("git");
         c.env("GIT_TERMINAL_PROMPT", "0").env("GIT_ASKPASS", "true");
         if let Some(cr) = creds.filter(|c| !c.username.is_empty() || !c.password.is_empty()) {
@@ -80,7 +86,58 @@ impl Repos {
             c.arg("-c")
                 .arg(format!("http.extraHeader=Authorization: Basic {token}"));
         }
-        c
+        if let Some(cr) = creds.filter(|c| !c.ssh_private_key.is_empty()) {
+            c.env("GIT_SSH_COMMAND", self.ssh_command(cr)?);
+        }
+        Ok(c)
+    }
+
+    /// The `ssh` git runs for a private key: the key and the known hosts
+    /// in files under the cache directory, host keys checked unless the
+    /// repository is insecure (as Argo CD's repo server does).
+    fn ssh_command(&self, cr: &Creds) -> Result<String> {
+        let dir = self.dir.join("ssh");
+        let file = |name: String, body: &str| -> Result<PathBuf> {
+            let p = dir.join(name);
+            if !p.exists() {
+                std::fs::create_dir_all(&dir).context("ssh directory")?;
+                let tmp = p.with_extension("tmp");
+                let mut body = body.replace("\r\n", "\n");
+                if !body.ends_with('\n') {
+                    body.push('\n');
+                }
+                std::fs::write(&tmp, body).context("writing an ssh file")?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+                }
+                std::fs::rename(&tmp, &p)?;
+            }
+            Ok(p)
+        };
+        let key = file(
+            format!("key-{}", hash(&cr.ssh_private_key)),
+            &cr.ssh_private_key,
+        )?;
+        let quote = |p: &Path| format!("'{}'", p.display().to_string().replace('\'', "'\\''"));
+        let mut cmd = format!(
+            "ssh -i {} -o IdentitiesOnly=yes -o BatchMode=yes",
+            quote(&key)
+        );
+        if cr.insecure {
+            cmd.push_str(" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null");
+        } else {
+            let hosts = file(
+                format!("known-hosts-{}", hash(&cr.known_hosts)),
+                &cr.known_hosts,
+            )?;
+            cmd.push_str(&format!(
+                " -o StrictHostKeyChecking=yes -o UserKnownHostsFile={}",
+                quote(&hosts)
+            ));
+        }
+        Ok(cmd)
     }
 
     /// The commit `rev` (branch, tag, HEAD or a SHA) points at. Answers from
@@ -104,7 +161,7 @@ impl Repos {
             return Ok(sha.clone());
         }
         let out = run_command(
-            self.git(creds).args(["ls-remote", url]),
+            self.git(creds)?.args(["ls-remote", url]),
             &format!("git ls-remote {url}"),
         )
         .await?;
@@ -176,7 +233,7 @@ impl Repos {
         .is_ok();
         if !have {
             run_command(
-                self.git(creds).arg("-C").arg(&bare).args([
+                self.git(creds)?.arg("-C").arg(&bare).args([
                     "fetch",
                     "-q",
                     "--force",
@@ -201,7 +258,7 @@ impl Repos {
             {
                 // Not on a branch or tag: ask for the commit itself.
                 run_command(
-                    self.git(creds)
+                    self.git(creds)?
                         .arg("-C")
                         .arg(&bare)
                         .args(["fetch", "-q", url, sha]),
@@ -325,6 +382,54 @@ mod tests {
         assert!(is_sha("54227dfefaca27d979cb41eaa7cb93210b8ee578"));
         assert!(!is_sha("main"));
         assert_ne!(hash("a"), hash("b"));
+    }
+
+    /// An SSH key and the known hosts land in private files git's ssh reads;
+    /// an insecure repository skips the host key check.
+    #[test]
+    fn ssh_credentials() {
+        let tmp = std::env::temp_dir().join(format!("litecd-ssh-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let repos = Repos::new(tmp.clone());
+        let mut cr = Creds {
+            ssh_private_key: "-----BEGIN KEY-----\r\nabc\r\n-----END KEY-----".into(),
+            known_hosts: "github.com ssh-ed25519 AAAA".into(),
+            ..Creds::default()
+        };
+        let cmd = repos.git(Some(&cr)).unwrap();
+        let ssh = cmd
+            .as_std()
+            .get_envs()
+            .find(|(k, _)| *k == "GIT_SSH_COMMAND")
+            .and_then(|(_, v)| v)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(ssh.contains("StrictHostKeyChecking=yes"), "{ssh}");
+        let key = tmp
+            .join("ssh")
+            .join(format!("key-{}", hash(&cr.ssh_private_key)));
+        assert!(ssh.contains(&key.display().to_string()), "{ssh}");
+        assert_eq!(
+            std::fs::read_to_string(&key).unwrap(),
+            "-----BEGIN KEY-----\nabc\n-----END KEY-----\n"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        cr.insecure = true;
+        let cmd = repos.git(Some(&cr)).unwrap();
+        let ssh = format!("{:?}", cmd.as_std().get_envs().collect::<Vec<_>>());
+        assert!(ssh.contains("StrictHostKeyChecking=no"), "{ssh}");
+        // No key: git's own ssh, untouched.
+        let cmd = repos.git(Some(&Creds::default())).unwrap();
+        assert!(cmd.as_std().get_envs().all(|(k, _)| k != "GIT_SSH_COMMAND"));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// A local repository resolves branches and checks out trees.

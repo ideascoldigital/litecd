@@ -117,6 +117,14 @@ pub fn check_text(file: &Path, text: &str) -> Result<Vec<Object>> {
             (a, "ApplicationSet") if a.starts_with("argoproj.io/") => application_set(&v),
             // A kustomize patch of argocd-cm may have no apiVersion.
             (_, "ConfigMap") if v["metadata"]["name"] == "argocd-cm" => argocd_cm(&v),
+            ("v1", "Secret")
+                if matches!(
+                    v["metadata"]["labels"]["argocd.argoproj.io/secret-type"].as_str(),
+                    Some("repository" | "repo-creds")
+                ) =>
+            {
+                repository(&v)
+            }
             _ => continue,
         };
         out.push(Object {
@@ -430,6 +438,44 @@ fn argocd_cm(v: &Value) -> Vec<Feature> {
     out
 }
 
+/// A repository (or repo-creds) Secret: how litecd reaches the repository.
+fn repository(v: &Value) -> Vec<Feature> {
+    let mut out = Vec::new();
+    let has = |k: &str| v["data"][k].is_string() || v["stringData"][k].is_string();
+    if has("username") || has("password") {
+        push(
+            &mut out,
+            "repository credentials: username/password",
+            Support::Phase1,
+        );
+    }
+    if has("sshPrivateKey") {
+        push(
+            &mut out,
+            "repository credentials: SSH private key",
+            Support::Phase1,
+        );
+    }
+    for (k, name) in [
+        ("githubAppPrivateKey", "repository credentials: GitHub App"),
+        (
+            "tlsClientCertData",
+            "repository credentials: TLS client certificate",
+        ),
+        (
+            "gcpServiceAccountKey",
+            "repository credentials: Google Cloud service account",
+        ),
+        ("bearerToken", "repository credentials: bearer token"),
+        ("proxy", "repository proxy"),
+    ] {
+        if has(k) {
+            push(&mut out, name, Support::NotPlanned);
+        }
+    }
+    out
+}
+
 /// The text report: one block per object, then a summary.
 pub fn report(objects: &[Object]) -> String {
     let mut s = String::new();
@@ -586,6 +632,30 @@ data:
         );
         assert_eq!(o.needs(), Support::NotPlanned);
         assert!(o.features.iter().all(|f| f.name != "url"), "{o:?}");
+    }
+
+    #[test]
+    fn repository_secrets() {
+        let o = one(
+            "apiVersion: v1\nkind: Secret\nmetadata:\n  name: r\n  labels:\n    argocd.argoproj.io/secret-type: repository\nstringData:\n  url: git@github.com:o/r.git\n  sshPrivateKey: k\n  githubAppPrivateKey: g\n",
+        );
+        assert_eq!(
+            support(&o, "repository credentials: SSH private key"),
+            Support::Phase1
+        );
+        assert_eq!(
+            support(&o, "repository credentials: GitHub App"),
+            Support::NotPlanned
+        );
+        // Other Secrets are not Argo CD's.
+        assert!(
+            check_text(
+                Path::new("x"),
+                "apiVersion: v1\nkind: Secret\nmetadata:\n  name: s\n"
+            )
+            .unwrap()
+            .is_empty()
+        );
     }
 
     #[test]
