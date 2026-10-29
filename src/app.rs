@@ -135,6 +135,8 @@ pub struct Ctx {
     /// argocd-cmd-params-cm's `application.namespaces`: where else
     /// Applications are reconciled (globs, or regular expressions in `/.../`).
     pub app_namespaces: RwLock<Vec<String>>,
+    /// Compare and report only: nothing is written to any cluster.
+    pub observe: bool,
     manifests: Mutex<HashMap<String, Arc<Rendered>>>,
     /// Server-side dry runs that found a live object in sync: (live
     /// resourceVersion, desired) → in sync.
@@ -156,6 +158,7 @@ impl Ctx {
             namespace,
             settings: RwLock::new(settings),
             app_namespaces: RwLock::default(),
+            observe: false,
             manifests: Mutex::default(),
             dry_runs: Mutex::default(),
             clusters: Mutex::default(),

@@ -55,6 +55,16 @@ and the litecd Deployment in the `argocd` namespace. Do not run it next to
 Argo CD's application controller: uninstall Argo CD's workloads and keep its
 CRDs, Applications and Secrets.
 
+To try litecd on a cluster Argo CD runs, start it with `--observe`
+(`LITECD_OBSERVE=true`): it compares every Application as it would and logs
+where its status differs from the one Argo CD stored, and writes nothing
+(no status, sync, prune, finalizer, ApplicationSet or webhook refresh).
+It can run beside Argo CD, even from a laptop with a kubeconfig:
+
+```bash
+litecd controller --observe --cache-dir /tmp/litecd-observe
+```
+
 ## Check your manifests
 
 `litecd check` reads your manifests and tells you which features they use
