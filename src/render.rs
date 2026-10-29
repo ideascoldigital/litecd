@@ -234,6 +234,22 @@ fn walk(dir: &Path, recurse: bool, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Whether `helm dependency list` shows a dependency that `helm template` would
+/// refuse: anything but `ok` (a matching archive) or `unpacked` (a directory).
+fn dependencies_to_build(list: &str) -> bool {
+    list.lines()
+        .skip(1)
+        .filter(|l| !l.trim().is_empty())
+        .any(|l| {
+            let status = l
+                .split('\t')
+                .map(str::trim)
+                .rfind(|c| !c.is_empty())
+                .unwrap_or("");
+            !matches!(status, "ok" | "unpacked")
+        })
+}
+
 /// `helm template` of a chart directory with the source's helm options.
 pub async fn helm_template(
     chart: &Path,
@@ -246,14 +262,23 @@ pub async fn helm_template(
         .as_str()
         .filter(|s| !s.is_empty())
         .unwrap_or(cx.app_name);
-    // Dependencies not vendored in charts/: build them as Argo CD does.
+    // Dependencies not vendored in charts/: build them as Argo CD does. A chart can
+    // vendor some (file://charts/<name>) and fetch others, so ask helm which are
+    // missing instead of looking for charts/ alone.
     let chart_yaml = std::fs::read_to_string(chart.join("Chart.yaml")).unwrap_or_default();
-    if chart_yaml.contains("dependencies:") && !chart.join("charts").exists() {
-        run_command(
-            helm(cx.cache).arg("dependency").arg("build").arg(chart),
-            "helm dependency build",
+    if chart_yaml.contains("dependencies:") {
+        let listed = run_command(
+            helm(cx.cache).arg("dependency").arg("list").arg(chart),
+            "helm dependency list",
         )
         .await?;
+        if dependencies_to_build(&String::from_utf8_lossy(&listed)) {
+            run_command(
+                helm(cx.cache).arg("dependency").arg("build").arg(chart),
+                "helm dependency build",
+            )
+            .await?;
+        }
     }
     let mut cmd = helm(cx.cache);
     cmd.arg("template")
@@ -537,6 +562,82 @@ fn unique() -> u64 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// An umbrella as the gitops repositories write them: one subchart vendored
+    /// under charts/ and one more to fetch (charts/ exists, so the old check skipped the build).
+    #[tokio::test]
+    async fn builds_dependencies_next_to_vendored_ones() {
+        if std::process::Command::new("helm")
+            .arg("version")
+            .output()
+            .is_err()
+        {
+            eprintln!("helm not installed: skipped");
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("litecd-helmdeps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let files = [
+            (
+                "umbrella/Chart.yaml",
+                "apiVersion: v2\nname: umbrella\nversion: 0.1.0\ndependencies:\n- {name: db, version: 1.0.0, repository: \"file://charts/db\"}\n- {name: app, version: 2.0.0, repository: \"file://../app\"}\n",
+            ),
+            (
+                "umbrella/charts/db/Chart.yaml",
+                "apiVersion: v2\nname: db\nversion: 1.0.0\n",
+            ),
+            (
+                "umbrella/charts/db/templates/cm.yaml",
+                "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: db}\n",
+            ),
+            (
+                "app/Chart.yaml",
+                "apiVersion: v2\nname: app\nversion: 2.0.0\n",
+            ),
+            (
+                "app/templates/cm.yaml",
+                "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: app}\n",
+            ),
+        ];
+        for (p, body) in files {
+            let f = tmp.join(p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, body).unwrap();
+        }
+        let cache = tmp.join("cache");
+        let cx = RenderCtx {
+            app_name: "umbrella",
+            namespace: "default",
+            kube_version: String::new(),
+            api_versions: Vec::new(),
+            cache: &cache,
+            kustomize_build_options: String::new(),
+        };
+        let objs = helm_template(&tmp.join("umbrella"), &json!({}), &cx, &Default::default())
+            .await
+            .unwrap();
+        let mut got = names(&objs);
+        got.sort();
+        assert_eq!(got, ["app", "db"]);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn dependency_list_statuses() {
+        let vendored_and_fetched = "NAME  \tVERSION\tREPOSITORY                     \tSTATUS  \n\
+            mongodb\t0.1.0  \tfile://charts/mongodb          \tunpacked\n\
+            groveback\t0.76.0\thttp://chartmuseum:8080        \tmissing \n\n";
+        assert!(dependencies_to_build(vendored_and_fetched));
+        let built = "NAME\tVERSION\tREPOSITORY\tSTATUS\nmongodb\t0.1.0\tfile://charts/mongodb\tunpacked\n\
+            groveback\t0.76.0\thttp://chartmuseum:8080\tok\n";
+        assert!(!dependencies_to_build(built));
+        assert!(dependencies_to_build(
+            "NAME\tVERSION\tREPOSITORY\tSTATUS\nredis\t2.0.0\thttps://x\twrong version\n"
+        ));
+        assert!(!dependencies_to_build(
+            "NAME\tVERSION\tREPOSITORY\tSTATUS\n"
+        ));
+    }
 
     fn names(objs: &[Value]) -> Vec<&str> {
         objs.iter()
