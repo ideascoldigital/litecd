@@ -305,6 +305,21 @@ pub fn tracking_id(app: &str, k: &Key) -> String {
     format!("{app}:{}/{}:{}/{}", k.group, k.kind, k.namespace, k.name)
 }
 
+/// The key a desired object's tracking id names; none: not tracked. Argo
+/// CD's repo server leaves CRDs untracked (deleting an app must not take a
+/// CRD and every object of it along) and names a cluster-scoped object in
+/// the destination namespace.
+pub fn tracked_as(key: &Key, api_version: &str, dest_ns: &str) -> Option<Key> {
+    if key.kind == "CustomResourceDefinition" && api_version.starts_with("apiextensions.k8s.io/") {
+        return None;
+    }
+    let mut k = key.clone();
+    if k.namespace.is_empty() {
+        k.namespace = dest_ns.to_string();
+    }
+    Some(k)
+}
+
 /// Which app a live object belongs to, by its tracking metadata.
 pub fn owner(obj: &Value, settings: &Settings) -> Option<String> {
     let meta = &obj["metadata"];
@@ -790,8 +805,8 @@ pub async fn desired_objects(
             HookKind::Skip => continue,
             HookKind::Phase(p, d) => (Some(p), d),
         };
-        {
-            let id = tracking_id(name, &key);
+        if let Some(tracked) = tracked_as(&key, &api, &dest_ns) {
+            let id = tracking_id(name, &tracked);
             let meta = obj["metadata"]
                 .as_object_mut()
                 .expect("rendered objects have metadata");
@@ -1386,6 +1401,29 @@ mod tests {
             name: "a".into(),
         };
         assert_eq!(tracking_id("app", &k), "app:/ConfigMap:ns/a");
+        // As Argo CD writes them: a cluster-scoped object in the
+        // destination namespace, a CRD not at all.
+        let role = Key {
+            group: "rbac.authorization.k8s.io".into(),
+            kind: "ClusterRole".into(),
+            namespace: String::new(),
+            name: "view".into(),
+        };
+        assert_eq!(
+            tracking_id(
+                "argo",
+                &tracked_as(&role, "rbac.authorization.k8s.io/v1", "argo").unwrap()
+            ),
+            "argo:rbac.authorization.k8s.io/ClusterRole:argo/view"
+        );
+        assert_eq!(tracked_as(&k, "v1", "other").unwrap().namespace, "ns");
+        let crd = Key {
+            group: "apiextensions.k8s.io".into(),
+            kind: "CustomResourceDefinition".into(),
+            namespace: String::new(),
+            name: "workflows.argoproj.io".into(),
+        };
+        assert!(tracked_as(&crd, "apiextensions.k8s.io/v1", "argo").is_none());
         let obj = json!({"metadata": {"annotations": {TRACKING_ID: "app:/ConfigMap:ns/a"}}});
         assert_eq!(owner(&obj, &Settings::default()).as_deref(), Some("app"));
     }
