@@ -26,6 +26,7 @@ mlua = { version = "0.12", features = ["lua51", "vendored", "serialize", "send"]
 globset = "0.4"
 tar = "0.4"
 base64 = "0.22"
+ring = "0.17"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 http = "1"
 gtmpl = "0.7"
