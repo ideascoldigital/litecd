@@ -1203,16 +1203,10 @@ pub async fn compare(
         let replace = d.has_option("Replace=true") || options.iter().any(|o| o == "Replace=true");
         let ignored = ignore::ignored(&rules, &d.key, &d.obj, live.as_ref());
         let synced = match &live {
-            Some(l) => {
-                if replace {
-                    diff::subset(
-                        &ignore::without(&d.obj, &ignored),
-                        &ignore::without(l, &ignored),
-                    )
-                } else {
-                    in_sync(ctx, kube, d, l, ssa, &ignored).await
-                }
-            }
+            // Replace writes no last-applied: compare as server-side
+            // apply does (a subset, else the API server's dry run, which
+            // drops what it would omit, e.g. a false `globalDefault`).
+            Some(l) => in_sync(ctx, kube, d, l, ssa || replace, &ignored).await,
             None => false,
         };
         let health = match &live {
