@@ -86,6 +86,7 @@ impl Controller {
                 instance: instance.clone(),
                 last_fresh: None,
                 published: None,
+                observed: None,
             };
             task.run(rx).await;
             me.apps.lock().await.remove(&instance);
@@ -139,7 +140,9 @@ impl Controller {
     }
 
     pub async fn run(self: Arc<Self>) -> Result<()> {
-        ensure_default_project(&self.ctx).await;
+        if !self.ctx.observe {
+            ensure_default_project(&self.ctx).await;
+        }
         let app_kind = self
             .ctx
             .kube
@@ -292,6 +295,8 @@ struct AppTask {
     last_fresh: Option<Instant>,
     /// What the app's diff Secret holds (a hash; none: not known yet).
     published: Option<u64>,
+    /// Observe mode: the report last logged.
+    observed: Option<String>,
 }
 
 /// Most bytes of a diff document; past it, the biggest resources keep only
@@ -366,6 +371,80 @@ fn diff_secret(app: &Value, name: &str, doc: &Value) -> Value {
 pub const DIFF_LABEL: &str = "gitops.litek8s.dev/diff";
 
 /// A Kubernetes duration for retry backoffs ("5s", "3m").
+/// Observe mode: whether litecd's status agrees with the stored one on
+/// sync, health, revisions and each resource's sync and health, and a
+/// one-line account (litecd's view, then each difference).
+fn observe_report(stored: &Value, ours: &Value) -> (bool, String) {
+    let line = |s: &Value| {
+        let rev = if s["sync"]["revisions"].is_array() {
+            s["sync"]["revisions"].to_string()
+        } else {
+            s["sync"]["revision"].as_str().unwrap_or("-").to_string()
+        };
+        format!(
+            "{}/{} at {rev}",
+            s["sync"]["status"].as_str().unwrap_or("-"),
+            s["health"]["status"].as_str().unwrap_or("-")
+        )
+    };
+    let res = |s: &Value| -> std::collections::BTreeMap<String, String> {
+        s["resources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|r| {
+                (
+                    format!(
+                        "{}/{} {}/{}",
+                        r["group"].as_str().unwrap_or_default(),
+                        r["kind"].as_str().unwrap_or_default(),
+                        r["namespace"].as_str().unwrap_or_default(),
+                        r["name"].as_str().unwrap_or_default()
+                    ),
+                    format!(
+                        "{}/{}",
+                        r["status"].as_str().unwrap_or("-"),
+                        r["health"]["status"].as_str().unwrap_or("-")
+                    ),
+                )
+            })
+            .collect()
+    };
+    let mut diffs = Vec::new();
+    let (a, b) = (line(ours), line(stored));
+    if a != b {
+        diffs.push(format!("stored {b}"));
+    }
+    let (ra, rb) = (res(ours), res(stored));
+    for (k, v) in &ra {
+        match rb.get(k) {
+            None => diffs.push(format!("{k}: {v}, not in stored")),
+            Some(w) if w != v => diffs.push(format!("{k}: {v}, stored {w}")),
+            _ => {}
+        }
+    }
+    for (k, w) in &rb {
+        if !ra.contains_key(k) {
+            diffs.push(format!("{k}: only in stored ({w})"));
+        }
+    }
+    let errors: Vec<&str> = ours["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| c["type"].as_str().is_some_and(|t| t.ends_with("Error")))
+        .filter_map(|c| c["message"].as_str())
+        .collect();
+    let mut out = format!("{a} ({} resources)", ra.len());
+    for e in &errors {
+        out.push_str(&format!("; error: {e}"));
+    }
+    for d in &diffs {
+        out.push_str(&format!("; {d}"));
+    }
+    (diffs.is_empty(), out)
+}
+
 fn backoff_delay(retry: &Value, attempt: u32) -> Duration {
     let b = &retry["backoff"];
     let base = b["duration"]
@@ -621,6 +700,9 @@ impl AppTask {
         let Some(app) = self.get().await? else {
             return Ok(Next::Gone);
         };
+        if self.ctx().observe {
+            return self.observe(&app).await;
+        }
         if app["metadata"]["deletionTimestamp"].is_string() {
             return self.finalize(&app).await;
         }
@@ -688,6 +770,58 @@ impl AppTask {
                 Ok(Next::Again)
             }
         }
+    }
+
+    /// Observe mode: compare as a reconcile does and log, when it changes,
+    /// how the status litecd would write differs from the stored one.
+    /// Nothing is written; operations, deletions and auto-sync are left to
+    /// whoever owns the app.
+    async fn observe(&mut self, app: &Value) -> Result<Next> {
+        let every = self.ctx().settings.read().await.reconcile;
+        let refresh = app["metadata"]["annotations"][REFRESH].as_str();
+        let fresh = refresh.is_some() || self.last_fresh.is_none_or(|t| t.elapsed() >= every);
+        let (cmp, _) = self.compare(app, fresh, refresh == Some("hard")).await;
+        if fresh {
+            self.last_fresh = Some(Instant::now());
+        }
+        let status = status_from(self.ctx(), app, &cmp, fresh);
+        let (same, report) = observe_report(&app["status"], &status);
+        if self.observed.as_deref() != Some(report.as_str()) {
+            if same {
+                info!("observe {}: same as stored: {report}", self.instance);
+            } else {
+                warn!("observe {}: DIFFERS from stored: {report}", self.instance);
+            }
+            self.observed = Some(report);
+            if let Ok(c) = &cmp {
+                for r in c.resources.iter().filter(|r| !r.synced) {
+                    if let Some((want, live)) = &r.diff {
+                        tracing::debug!(
+                            "observe {}: {}/{} {}/{}: desired {want} live {live}",
+                            self.instance,
+                            r.key.group,
+                            r.key.kind,
+                            r.key.namespace,
+                            r.key.name
+                        );
+                    }
+                }
+            }
+        }
+        if let Ok(c) = &cmp {
+            let server = self
+                .ctx()
+                .target(&app["spec"]["destination"])
+                .await
+                .map(|t| t.1)
+                .unwrap_or_default();
+            for r in &c.desired {
+                if let Some(k) = &r.kind {
+                    self.c.watch_kind(&c.kube, &server, k).await;
+                }
+            }
+        }
+        Ok(Next::Wait(every.max(Duration::from_secs(5))))
     }
 
     /// Keep the app's diff Secret (`<app>.diff`, next to it) to what is out
@@ -1249,6 +1383,28 @@ impl sync::Progress for OpProgress<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observe_reports_differences() {
+        let stored = json!({"sync": {"status": "Synced", "revision": "abc"}, "health": {"status": "Healthy"},
+            "resources": [{"kind": "Service", "namespace": "n", "name": "s", "status": "Synced", "health": {"status": "Healthy"}},
+                          {"kind": "ConfigMap", "namespace": "n", "name": "c", "status": "Synced"}]});
+        let (same, r) = observe_report(&stored, &stored);
+        assert!(same, "{r}");
+        assert_eq!(r, "Synced/Healthy at abc (2 resources)");
+        let mut ours = stored.clone();
+        ours["sync"]["status"] = json!("OutOfSync");
+        ours["resources"][1]["status"] = json!("OutOfSync");
+        ours["resources"].as_array_mut().unwrap().remove(0);
+        ours["conditions"] = json!([{"type": "ComparisonError", "message": "boom"}]);
+        let (same, r) = observe_report(&stored, &ours);
+        assert!(!same);
+        assert_eq!(
+            r,
+            "OutOfSync/Healthy at abc (1 resources); error: boom; stored Synced/Healthy at abc; \
+             /ConfigMap n/c: OutOfSync/-, stored Synced/-; /Service n/s: only in stored (Synced/Healthy)"
+        );
+    }
 
     #[test]
     fn backoffs() {

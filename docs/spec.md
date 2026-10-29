@@ -52,7 +52,7 @@ One binary, one Deployment (one replica; a Lease when there are more).
 |---|---|---|
 | Kubernetes client | `kube-rs`, typed CRDs for the argoproj.io kinds | |
 | Cache | lazy informers: only the resource types that appear in some app's desired manifests; objects not carrying a litecd/Argo tracking id dropped on arrival | the main memory difference from Argo CD, which mirrors the cluster |
-| Git | the `git` CLI, as Argo CD's repo server runs it (auth, protocols and odd servers behave the same; `gix` would save the binary in the image), a bare cache per repository, trees by commit, manifests cached by (revision, path, params) | `/api/webhook` with GitHub, Gitea and GitLab payloads (same path as argocd-server), polling as in `timeout.reconciliation` |
+| Git | the `git` CLI, as Argo CD's repo server runs it (auth, protocols and odd servers behave the same; `gix` would save the binary in the image), a bare cache per repository, trees by commit, manifests cached by (revision, path, params); `repository`/`repo-creds` Secrets with username/password or `sshPrivateKey` (host keys from `argocd-ssh-known-hosts-cm`, unchecked when `insecure`) | `/api/webhook` with GitHub, Gitea and GitLab payloads (same path as argocd-server), polling as in `timeout.reconciliation` |
 | Render: directory | native: YAML/JSON, `recurse`, `include`, `exclude` | jsonnet in phase 2 (`jrsonnet`) |
 | Render: Helm, Kustomize | run `helm template` / `kustomize build`, as Argo CD's repo server does | identical output; the image ships both binaries. A native Go-template + sprig engine is out of scope |
 | Helm repositories | `index.yaml`, OCI, chart cache | `values`, `valuesObject`, `valueFiles`, `parameters`, `releaseName`, `skipCrds`, multi-source `$ref` values |

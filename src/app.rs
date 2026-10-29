@@ -135,6 +135,8 @@ pub struct Ctx {
     /// argocd-cmd-params-cm's `application.namespaces`: where else
     /// Applications are reconciled (globs, or regular expressions in `/.../`).
     pub app_namespaces: RwLock<Vec<String>>,
+    /// Compare and report only: nothing is written to any cluster.
+    pub observe: bool,
     manifests: Mutex<HashMap<String, Arc<Rendered>>>,
     /// Server-side dry runs that found a live object in sync: (live
     /// resourceVersion, desired) → in sync.
@@ -156,6 +158,7 @@ impl Ctx {
             namespace,
             settings: RwLock::new(settings),
             app_namespaces: RwLock::default(),
+            observe: false,
             manifests: Mutex::default(),
             dry_runs: Mutex::default(),
             clusters: Mutex::default(),
@@ -300,6 +303,21 @@ pub fn instance_name(app: &Value, controller_ns: &str) -> String {
 /// The tracking id Argo CD writes: `<app>:<group>/<Kind>:<namespace>/<name>`.
 pub fn tracking_id(app: &str, k: &Key) -> String {
     format!("{app}:{}/{}:{}/{}", k.group, k.kind, k.namespace, k.name)
+}
+
+/// The key a desired object's tracking id names; none: not tracked. Argo
+/// CD's repo server leaves CRDs untracked (deleting an app must not take a
+/// CRD and every object of it along) and names a cluster-scoped object in
+/// the destination namespace.
+pub fn tracked_as(key: &Key, api_version: &str, dest_ns: &str) -> Option<Key> {
+    if key.kind == "CustomResourceDefinition" && api_version.starts_with("apiextensions.k8s.io/") {
+        return None;
+    }
+    let mut k = key.clone();
+    if k.namespace.is_empty() {
+        k.namespace = dest_ns.to_string();
+    }
+    Some(k)
 }
 
 /// Which app a live object belongs to, by its tracking metadata.
@@ -577,9 +595,12 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
         let c = Creds {
             username: decode(s, "username"),
             password: decode(s, "password"),
+            ssh_private_key: decode(s, "sshPrivateKey"),
+            insecure: decode(s, "insecure") == "true",
+            known_hosts: String::new(),
         };
         match ty {
-            "repository" if u == want => return Some(c),
+            "repository" if u == want => return Some(with_known_hosts(ctx, c).await),
             "repo-creds"
                 if !u.is_empty()
                     && want.starts_with(&u)
@@ -590,7 +611,29 @@ pub async fn creds_for(ctx: &Ctx, url: &str) -> Option<Creds> {
             _ => {}
         }
     }
-    best.map(|(_, c)| c)
+    match best {
+        Some((_, c)) => Some(with_known_hosts(ctx, c).await),
+        None => None,
+    }
+}
+
+/// SSH credentials check host keys against argocd-ssh-known-hosts-cm.
+async fn with_known_hosts(ctx: &Ctx, mut c: Creds) -> Creds {
+    if c.ssh_private_key.is_empty() || c.insecure {
+        return c;
+    }
+    if let Some(k) = ctx.kube.known("v1", "ConfigMap").await
+        && let Ok(Some(cm)) = ctx
+            .kube
+            .get(&k, Some(&ctx.namespace), "argocd-ssh-known-hosts-cm")
+            .await
+    {
+        c.known_hosts = cm["data"]["ssh_known_hosts"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+    }
+    c
 }
 
 /// The revisions all sources point at now.
@@ -762,8 +805,8 @@ pub async fn desired_objects(
             HookKind::Skip => continue,
             HookKind::Phase(p, d) => (Some(p), d),
         };
-        {
-            let id = tracking_id(name, &key);
+        if let Some(tracked) = tracked_as(&key, &api, &dest_ns) {
+            let id = tracking_id(name, &tracked);
             let meta = obj["metadata"]
                 .as_object_mut()
                 .expect("rendered objects have metadata");
@@ -925,7 +968,10 @@ async fn in_sync(
             ignore::without(&diff::strip_volatile(&after), ignored)
                 == ignore::without(&diff::strip_volatile(live), ignored)
         }
-        Err(_) => false,
+        Err(e) => {
+            tracing::debug!("dry run of {}: {e:#}", tracking_id("", &d.key));
+            false
+        }
     };
     let mut cache = ctx.dry_runs.lock().await;
     if cache.len() > 4096 {
@@ -1160,16 +1206,10 @@ pub async fn compare(
         let replace = d.has_option("Replace=true") || options.iter().any(|o| o == "Replace=true");
         let ignored = ignore::ignored(&rules, &d.key, &d.obj, live.as_ref());
         let synced = match &live {
-            Some(l) => {
-                if replace {
-                    diff::subset(
-                        &ignore::without(&d.obj, &ignored),
-                        &ignore::without(l, &ignored),
-                    )
-                } else {
-                    in_sync(ctx, kube, d, l, ssa, &ignored).await
-                }
-            }
+            // Replace writes no last-applied: compare as server-side
+            // apply does (a subset, else the API server's dry run, which
+            // drops what it would omit, e.g. a false `globalDefault`).
+            Some(l) => in_sync(ctx, kube, d, l, ssa || replace, &ignored).await,
             None => false,
         };
         let health = match &live {
@@ -1358,6 +1398,29 @@ mod tests {
             name: "a".into(),
         };
         assert_eq!(tracking_id("app", &k), "app:/ConfigMap:ns/a");
+        // As Argo CD writes them: a cluster-scoped object in the
+        // destination namespace, a CRD not at all.
+        let role = Key {
+            group: "rbac.authorization.k8s.io".into(),
+            kind: "ClusterRole".into(),
+            namespace: String::new(),
+            name: "view".into(),
+        };
+        assert_eq!(
+            tracking_id(
+                "argo",
+                &tracked_as(&role, "rbac.authorization.k8s.io/v1", "argo").unwrap()
+            ),
+            "argo:rbac.authorization.k8s.io/ClusterRole:argo/view"
+        );
+        assert_eq!(tracked_as(&k, "v1", "other").unwrap().namespace, "ns");
+        let crd = Key {
+            group: "apiextensions.k8s.io".into(),
+            kind: "CustomResourceDefinition".into(),
+            namespace: String::new(),
+            name: "workflows.argoproj.io".into(),
+        };
+        assert!(tracked_as(&crd, "apiextensions.k8s.io/v1", "argo").is_none());
         let obj = json!({"metadata": {"annotations": {TRACKING_ID: "app:/ConfigMap:ns/a"}}});
         assert_eq!(owner(&obj, &Settings::default()).as_deref(), Some("app"));
     }

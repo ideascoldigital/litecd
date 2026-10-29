@@ -58,6 +58,11 @@ enum Command {
         /// Where Git providers send pushes (`/api/webhook`, as argocd-server takes them); empty: none
         #[arg(long, env = "LITECD_LISTEN", default_value = "0.0.0.0:8080")]
         listen: String,
+        /// Compare every Application and log where litecd's status differs
+        /// from the stored one, writing nothing: no status, sync, prune,
+        /// finalizer, ApplicationSet or webhook refresh (safe beside a running Argo CD)
+        #[arg(long, env = "LITECD_OBSERVE")]
+        observe: bool,
     },
 }
 
@@ -74,6 +79,7 @@ fn main() -> Result<()> {
             cache_dir,
             listen,
             application_namespaces,
+            observe,
         } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -97,9 +103,15 @@ fn main() -> Result<()> {
                 };
                 let settings = app::Settings::from_config(cm.as_ref());
                 let repos = repo::Repos::new(cache_dir);
-                let ctx = std::sync::Arc::new(app::Ctx::new(kube, repos, namespace, settings));
+                let mut ctx = app::Ctx::new(kube, repos, namespace, settings);
+                ctx.observe = observe;
+                let ctx = std::sync::Arc::new(ctx);
+                if observe {
+                    tracing::info!("observe mode: comparing only, nothing is written");
+                }
                 *ctx.app_namespaces.write().await = app::split_list(&application_namespaces);
-                if !listen.is_empty() {
+                // A push refreshes apps through an annotation: a write.
+                if !listen.is_empty() && !observe {
                     let c = ctx.clone();
                     tokio::spawn(async move {
                         if let Err(e) = webhook::serve(c, &listen).await {
@@ -107,7 +119,7 @@ fn main() -> Result<()> {
                         }
                     });
                 }
-                {
+                if !observe {
                     let c = ctx.clone();
                     tokio::spawn(async move {
                         if let Err(e) = appset::run(c).await {
