@@ -54,9 +54,23 @@ kubectl apply --server-side -R -f deploy/install
 ```
 
 `deploy/install` holds Argo CD's own CRDs (unchanged), RBAC, `argocd-cm`
-and the litecd Deployment in the `argocd` namespace. Do not run it next to
-Argo CD's application controller: uninstall Argo CD's workloads and keep its
-CRDs, Applications and Secrets.
+and the litecd Deployment in the `argocd` namespace. To move over,
+uninstall Argo CD's workloads and keep its CRDs, Applications and Secrets.
+
+litecd will not fight Argo CD for an app. While Argo CD's application
+controller runs in litecd's namespace (`argocd-application-controller`, by
+name or `app.kubernetes.io/name`, as a StatefulSet or a Deployment, from the
+moment it has replicas until its last pod is gone), litecd writes nothing
+for an Application: no status, sync, prune, finalizer removal, diff Secret
+or webhook refresh, and it creates no default AppProject. It logs when it
+stands down and when it takes over, and takes over as soon as the controller
+is scaled to 0 and its pods are gone. An Application annotated
+`litecd.dev/manage: "true"` is litecd's either way; Argo CD keeps
+reconciling it too, so annotate only apps you mean both to act on (a test
+app, or one Argo CD is told to leave alone). ApplicationSets
+also wait for Argo CD's applicationset controller
+(`argocd-applicationset-controller`) to be gone, since both write the
+Applications they generate.
 
 To try litecd on a cluster Argo CD runs, start it with `--observe`
 (`LITECD_OBSERVE=true`): it compares every Application as it would and logs

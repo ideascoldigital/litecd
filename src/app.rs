@@ -137,6 +137,8 @@ pub struct Ctx {
     pub app_namespaces: RwLock<Vec<String>>,
     /// Compare and report only: nothing is written to any cluster.
     pub observe: bool,
+    /// Whether Argo CD's own controllers run, and so what litecd may write.
+    pub guard: crate::coexist::Guard,
     manifests: Mutex<HashMap<String, Arc<Rendered>>>,
     /// Server-side dry runs that found a live object in sync: (live
     /// resourceVersion, desired) → in sync.
@@ -159,6 +161,7 @@ impl Ctx {
             settings: RwLock::new(settings),
             app_namespaces: RwLock::default(),
             observe: false,
+            guard: crate::coexist::Guard::default(),
             manifests: Mutex::default(),
             dry_runs: Mutex::default(),
             clusters: Mutex::default(),

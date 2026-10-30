@@ -87,6 +87,7 @@ impl Controller {
                 last_fresh: None,
                 published: None,
                 observed: None,
+                manage: false,
             };
             task.run(rx).await;
             me.apps.lock().await.remove(&instance);
@@ -140,8 +141,26 @@ impl Controller {
     }
 
     pub async fn run(self: Arc<Self>) -> Result<()> {
+        // Coexistence: when Argo CD's application controller goes, create
+        // the default AppProject if missing and wake every app; when it
+        // comes back, each app stands down at its next write.
         if !self.ctx.observe {
-            ensure_default_project(&self.ctx).await;
+            let me = self.clone();
+            tokio::spawn(async move {
+                let mut rx = me.ctx.guard.subscribe();
+                let mut ours = false;
+                loop {
+                    let now = rx.borrow_and_update().apps_clear();
+                    if now && !ours {
+                        ensure_default_project(&me.ctx).await;
+                        me.kick_all().await;
+                    }
+                    ours = now;
+                    if rx.changed().await.is_err() {
+                        return;
+                    }
+                }
+            });
         }
         let app_kind = self
             .ctx
@@ -297,6 +316,8 @@ struct AppTask {
     published: Option<u64>,
     /// Observe mode: the report last logged.
     observed: Option<String>,
+    /// The app carries `litecd.dev/manage: "true"` (as last read).
+    manage: bool,
 }
 
 /// Most bytes of a diff document; past it, the biggest resources keep only
@@ -662,7 +683,20 @@ impl AppTask {
         self.ctx().kube.get(&k, Some(&self.ns), &self.name).await
     }
 
+    /// Whether litecd may write anything for this app now (docs/spec.md,
+    /// Coexistence): Argo CD's application controller is gone, or the app
+    /// carries `litecd.dev/manage: "true"`.
+    fn may_act(&self) -> bool {
+        self.manage || self.ctx().guard.status().apps_clear()
+    }
+
     async fn patch(&self, patch: &Value) -> Result<Value> {
+        // Every write to the Application goes through here: the last check
+        // before one, for an operation that was running when the guard
+        // turned.
+        if !self.may_act() {
+            anyhow::bail!(sync::STOOD_DOWN);
+        }
         let k = self.app_kind().await?;
         self.ctx()
             .kube
@@ -702,6 +736,15 @@ impl AppTask {
         };
         if self.ctx().observe {
             return self.observe(&app).await;
+        }
+        // Argo CD's application controller runs: nothing is written for
+        // this app (status, operation, auto-sync, prune, finalizer, diff)
+        // unless it is annotated for litecd. The guard wakes every app when
+        // the controller goes.
+        self.manage = crate::coexist::managed(&app);
+        if !self.may_act() {
+            let every = self.ctx().settings.read().await.reconcile;
+            return Ok(Next::Wait(every.max(Duration::from_secs(5))));
         }
         if app["metadata"]["deletionTimestamp"].is_string() {
             return self.finalize(&app).await;
@@ -832,6 +875,9 @@ impl AppTask {
         cmp: &Comparison,
         revisions: &[String],
     ) -> Result<()> {
+        if !self.may_act() {
+            return Ok(());
+        }
         let name = diff_secret_name(&self.name);
         let doc = diff_document(cmp, revisions);
         let hash = doc.as_ref().map(|d| {
@@ -1309,6 +1355,9 @@ impl AppTask {
                 continue;
             }
             remaining += 1;
+            if !self.may_act() {
+                return Ok(Next::Wait(Duration::from_secs(5)));
+            }
             if live["metadata"]["deletionTimestamp"].is_null() {
                 let _ = kube.delete(&kind, ns, name, propagation).await;
             }
