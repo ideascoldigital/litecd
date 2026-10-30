@@ -1,0 +1,399 @@
+[
+  {
+    "label": "two-replicas",
+    "tree": [
+      {
+        "group": "apps",
+        "health": {
+          "status": "Healthy"
+        },
+        "info": [
+          {
+            "name": "Revision",
+            "value": "Rev:1"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "web",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "externalURLs": [
+            "https://example.com/docs"
+          ]
+        },
+        "version": "v1"
+      },
+      {
+        "group": "apps",
+        "health": {
+          "status": "Healthy"
+        },
+        "info": [
+          {
+            "name": "Revision",
+            "value": "Rev:1"
+          }
+        ],
+        "kind": "ReplicaSet",
+        "name": "web-76779c97fb",
+        "namespace": "<NS>",
+        "parentRefs": [
+          {
+            "group": "apps",
+            "kind": "Deployment",
+            "name": "web",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "group": "batch",
+        "health": {
+          "message": "Reached expected number of succeeded pods",
+          "status": "Healthy"
+        },
+        "kind": "Job",
+        "name": "once",
+        "namespace": "<NS>",
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "images": [
+          "registry.k8s.io/pause:3.10"
+        ],
+        "info": [
+          {
+            "name": "Status Reason",
+            "value": "Completed"
+          },
+          {
+            "name": "Node",
+            "value": "<node>"
+          },
+          {
+            "name": "Containers",
+            "value": "0/1"
+          }
+        ],
+        "kind": "Pod",
+        "name": "once-*",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "labels": {
+            "batch.kubernetes.io/controller-uid": "<uid>",
+            "batch.kubernetes.io/job-name": "once",
+            "controller-uid": "<uid>",
+            "job-name": "once"
+          }
+        },
+        "parentRefs": [
+          {
+            "group": "batch",
+            "kind": "Job",
+            "name": "once",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "images": [
+          "registry.k8s.io/pause:3.10"
+        ],
+        "info": [
+          {
+            "name": "Status Reason",
+            "value": "Running"
+          },
+          {
+            "name": "Node",
+            "value": "<node>"
+          },
+          {
+            "name": "Containers",
+            "value": "2/2"
+          },
+          {
+            "name": "cpu",
+            "value": "15"
+          },
+          {
+            "name": "memory",
+            "value": "25165824000"
+          }
+        ],
+        "kind": "Pod",
+        "name": "web-76779c97fb-*",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "labels": {
+            "app": "web",
+            "pod-template-hash": "76779c97fb"
+          }
+        },
+        "parentRefs": [
+          {
+            "group": "apps",
+            "kind": "ReplicaSet",
+            "name": "web-76779c97fb",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "images": [
+          "registry.k8s.io/pause:3.10"
+        ],
+        "info": [
+          {
+            "name": "Status Reason",
+            "value": "Running"
+          },
+          {
+            "name": "Node",
+            "value": "<node>"
+          },
+          {
+            "name": "Containers",
+            "value": "2/2"
+          },
+          {
+            "name": "cpu",
+            "value": "15"
+          },
+          {
+            "name": "memory",
+            "value": "25165824000"
+          }
+        ],
+        "kind": "Pod",
+        "name": "web-76779c97fb-*",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "labels": {
+            "app": "web",
+            "pod-template-hash": "76779c97fb"
+          }
+        },
+        "parentRefs": [
+          {
+            "group": "apps",
+            "kind": "ReplicaSet",
+            "name": "web-76779c97fb",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "kind": "Service",
+        "name": "web",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "targetLabels": {
+            "app": "web"
+          }
+        },
+        "version": "v1"
+      },
+      {
+        "kind": "ConfigMap",
+        "name": "settings",
+        "namespace": "<NS>",
+        "version": "v1"
+      }
+    ]
+  },
+  {
+    "label": "one-replica",
+    "tree": [
+      {
+        "group": "apps",
+        "health": {
+          "status": "Healthy"
+        },
+        "info": [
+          {
+            "name": "Revision",
+            "value": "Rev:1"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "web",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "externalURLs": [
+            "https://example.com/docs"
+          ]
+        },
+        "version": "v1"
+      },
+      {
+        "group": "apps",
+        "health": {
+          "status": "Healthy"
+        },
+        "info": [
+          {
+            "name": "Revision",
+            "value": "Rev:1"
+          }
+        ],
+        "kind": "ReplicaSet",
+        "name": "web-76779c97fb",
+        "namespace": "<NS>",
+        "parentRefs": [
+          {
+            "group": "apps",
+            "kind": "Deployment",
+            "name": "web",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "group": "batch",
+        "health": {
+          "message": "Reached expected number of succeeded pods",
+          "status": "Healthy"
+        },
+        "kind": "Job",
+        "name": "once",
+        "namespace": "<NS>",
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "images": [
+          "registry.k8s.io/pause:3.10"
+        ],
+        "info": [
+          {
+            "name": "Status Reason",
+            "value": "Completed"
+          },
+          {
+            "name": "Node",
+            "value": "<node>"
+          },
+          {
+            "name": "Containers",
+            "value": "0/1"
+          }
+        ],
+        "kind": "Pod",
+        "name": "once-*",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "labels": {
+            "batch.kubernetes.io/controller-uid": "<uid>",
+            "batch.kubernetes.io/job-name": "once",
+            "controller-uid": "<uid>",
+            "job-name": "once"
+          }
+        },
+        "parentRefs": [
+          {
+            "group": "batch",
+            "kind": "Job",
+            "name": "once",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "images": [
+          "registry.k8s.io/pause:3.10"
+        ],
+        "info": [
+          {
+            "name": "Status Reason",
+            "value": "Running"
+          },
+          {
+            "name": "Node",
+            "value": "<node>"
+          },
+          {
+            "name": "Containers",
+            "value": "2/2"
+          },
+          {
+            "name": "cpu",
+            "value": "15"
+          },
+          {
+            "name": "memory",
+            "value": "25165824000"
+          }
+        ],
+        "kind": "Pod",
+        "name": "web-76779c97fb-*",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "labels": {
+            "app": "web",
+            "pod-template-hash": "76779c97fb"
+          }
+        },
+        "parentRefs": [
+          {
+            "group": "apps",
+            "kind": "ReplicaSet",
+            "name": "web-76779c97fb",
+            "namespace": "<NS>",
+            "version": "v1"
+          }
+        ],
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "kind": "Service",
+        "name": "web",
+        "namespace": "<NS>",
+        "networkingInfo": {
+          "targetLabels": {
+            "app": "web"
+          }
+        },
+        "version": "v1"
+      },
+      {
+        "kind": "ConfigMap",
+        "name": "settings",
+        "namespace": "<NS>",
+        "version": "v1"
+      }
+    ]
+  }
+]

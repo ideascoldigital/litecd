@@ -121,6 +121,7 @@ so litecd is compared on the same kind of cluster.
 | apps_any_namespace | 3 | Applications in another namespace (`application.namespaces`): `<ns>_<app>` tracking, heal, finalizer; a project without the source namespace (UnknownError); a namespace not enabled is ignored |
 | sync_windows | 3 | deny and allow windows by app, namespace, cluster and AND; manual syncs held (`manualSync` lets them through); a window removed |
 | coexistence | 1 | litecd only, no golden file: with a stand-in `argocd-application-controller` StatefulSet running, only the app annotated `litecd.dev/manage` is touched; scaled to 0, litecd takes over; back, it stands down (no refresh, no finalizer removal) |
+| argocd_ui_tree | 1 | DEPRECATED `argocd-ui-compat` (needs `LITECD_FEATURES=argocd-ui-compat deploy/build.sh` for litecd): the resource tree Argo CD's web UI reads from Redis (`compat/ui_tree.py`), Deployment → ReplicaSet → Pods and a Job's pod, at 2 and 1 replicas, equal to Argo CD's; with litecd also a refused cache of another version and a deleted app's tree removed |
 
 ## litecd
 

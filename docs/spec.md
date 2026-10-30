@@ -107,6 +107,84 @@ One binary, one Deployment (one replica; a Lease when there are more).
    set, Secret values masked, the biggest resources `omitted` past 900 KiB),
    written when it changes, deleted once the app is in sync (done 2026-10-26).
 
+## Deprecated compatibility
+
+Modes that exist only so litecd can sit in clusters that keep parts of Argo
+CD. Each is deprecated from the day it lands, behind a Cargo feature that is
+off by default (the default build and image do not contain it), off at run
+time unless asked for, in a module of its own that nothing else depends on,
+and logged as deprecated when it starts.
+
+### Argo CD's web UI: resource trees in Redis (`argocd-ui-compat`)
+
+**Purpose.** With litecd in place of Argo CD's application controller,
+argocd-server (Argo CD's web UI and API) can be kept running: lists, sync
+and health work, because they come from the Application objects litecd
+writes. The resource tree (Deployment → ReplicaSets → Pods with health,
+images and pod info, and through it pod logs and live manifests) is empty:
+argocd-server does not compute it, it reads the one Argo CD's controller
+keeps in Redis. This mode writes that tree.
+
+**How.** Build with `--features argocd-ui-compat` (image tag
+`vX.Y.Z-argocd-ui`) and start litecd with
+`--argocd-ui-cache redis://<argocd-server's Redis>:6379`
+(`LITECD_ARGOCD_UI_CACHE`; with Argo CD's HA chart,
+`redis://argocd-redis-ha-haproxy:6379`). The password is the key `auth` of
+the Secret `argocd-redis` in litecd's namespace (`--argocd-ui-cache-secret`;
+a password in the URL wins). After each comparison the controller hands the
+app's managed resources (live objects and health) to `src/compat/argocd_ui.rs`;
+the module watches only the child kinds those resources need (ReplicaSets
+under Deployments and Rollouts; Pods under ReplicaSets, StatefulSets,
+DaemonSets and Jobs; Jobs under CronJobs), only in the namespaces of the
+managed resources of such kinds, and stops a watch when no app needs it. It
+builds the tree from ownerReferences, with Argo CD's node info (pod status
+reason, node, containers, restarts, requests, images, labels; ReplicaSet and
+Deployment revision; Service selector; `link.argocd.argoproj.io/*` links),
+and writes it as Argo CD's controller does: key
+`app|resources-tree|<instance>|<cache version>` plus `.gz` with gzip
+compression, value the `ApplicationTree` JSON (gzipped), TTL 1 h
+(`--argocd-ui-cache-ttl`), then a publish on
+`app|managed-resources|<instance>|<cache version>` so an open UI reloads it.
+A tree is written only when it changed and again at half its TTL, only for
+apps litecd compared in the last three reconcile intervals (never for one
+Argo CD's controller owns while it runs), and deleted when the app goes.
+Pod logs and live manifests in the UI then go to the Kubernetes API through
+argocd-server, as with Argo CD. Argo CD's chart admits only its own pods to
+Redis with a NetworkPolicy: `deploy/argocd-ui-compat/networkpolicy.yaml`
+admits litecd too (a connection that times out says so in the log).
+
+**Coupling.** This is Argo CD's internal cache, not an API: key names, the
+cache version (`common.CacheVersion`, "1.8.3" from v2.0 to v3.5), the
+compression and the JSON shape may change in any release. litecd writes only
+when the format is known: argocd-server's image is a version it was checked
+against (v2.6 to v3.5) or `--argocd-ui-cache-version` names the cache
+version; the compression it is started with (`--redis-compress`,
+`REDIS_COMPRESSION` or the argocd-cmd-params-cm key it names) agrees with
+`--argocd-ui-cache-compression` when given; every tree key already in Redis
+has that format and the first one decodes. Otherwise it logs why and writes
+nothing; it checks again every 5 minutes. Not written: orphaned resources,
+hosts (the UI's node view), Ingress and child Application node info, other
+child kinds (ControllerRevisions, EndpointSlices, PVCs of a StatefulSet),
+`app|managed-resources|` (the UI's Diff tab: use the `<app>.diff` Secret),
+Redis over TLS or Sentinel. Compat case `argocd_ui_tree` compares the tree
+litecd writes with the one Argo CD v3.5.5 writes for the same app.
+
+**Cost.** Measured 2026-10-30 on the compat cluster (litek8s dev cluster, one
+node) with Argo CD v3.5.5's argocd-server and Redis, its application
+controller scaled to 0, and litecd built with the feature: 20 Applications,
+each a Deployment (one replica, a sidecar), a Service, a ConfigMap and a Job
+(40 pods, 40 child watches), idle after syncing, litecd's container read
+from its cgroup every 20 s over 3 to 4 minutes on a freshly started pod.
+Mode off: 7 MiB anonymous, 14 to 15 MiB RSS, 8 MiB working set. Mode on:
+11 MiB anonymous, 18 to 19 MiB RSS, 12 MiB working set; about 4 MiB for
+the watches and the trees (each tree 1 KiB gzipped in Redis). A build with
+the feature and the mode off runs no watch and opens no connection.
+
+**Removal.** When litecd has its own view of an app's resources, computed on
+demand from the Kubernetes API (phase 4: `litek8s ui`), and the clusters
+that keep argocd-server for its tree have moved to it, the feature, its
+image tag and this section are removed.
+
 ## Risks
 
 - Argo CD's diff and health semantics in the details (defaulted fields,

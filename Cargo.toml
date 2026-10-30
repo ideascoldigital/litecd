@@ -33,3 +33,11 @@ gtmpl = "0.7"
 secrecy = "0.10"
 chrono-tz = "0.10.4"
 regex = "1.13.1"
+# argocd-ui-compat only: gzip for the trees written to Argo CD's Redis.
+flate2 = { version = "1.1", optional = true, default-features = false, features = ["rust_backend"] }
+
+[features]
+default = []
+# DEPRECATED: write resource trees to the Redis of Argo CD's web UI
+# (docs/spec.md, Deprecated compatibility). Off by default.
+argocd-ui-compat = ["dep:flate2"]

@@ -91,6 +91,8 @@ impl Controller {
             };
             task.run(rx).await;
             me.apps.lock().await.remove(&instance);
+            #[cfg(feature = "argocd-ui-compat")]
+            crate::compat::argocd_ui::forget(&instance).await;
         });
     }
 
@@ -791,6 +793,8 @@ impl AppTask {
                     self.c.watch_kind(&c.kube, &server, k).await;
                 }
             }
+            #[cfg(feature = "argocd-ui-compat")]
+            crate::compat::argocd_ui::update(&self.instance, &c.kube, &server, c).await;
         }
         let periodic = Next::Wait(reconcile_every.max(Duration::from_secs(5)));
         let Ok(cmp) = cmp else { return Ok(periodic) };

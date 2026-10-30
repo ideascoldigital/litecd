@@ -1,0 +1,21 @@
+# DEPRECATED argocd-ui-compat (docs/spec.md, Deprecated compatibility):
+# lets litecd reach the Redis of Argo CD's web UI. Argo CD's chart only
+# admits its own pods to Redis; NetworkPolicies add up, so this one admits
+# litecd as well, on the Redis port of argocd-redis (or, with the HA chart,
+# argocd-redis-ha-haproxy). Apply it in litecd's namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litecd-argocd-ui-redis
+  namespace: argocd
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [argocd-redis, argocd-redis-ha-haproxy]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: litecd}
+      ports:
+        - {port: 6379, protocol: TCP}

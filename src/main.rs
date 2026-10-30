@@ -5,6 +5,7 @@ mod app;
 mod appset;
 mod check;
 mod coexist;
+mod compat;
 mod controller;
 mod diff;
 mod gotemplate;
@@ -67,6 +68,10 @@ enum Command {
         /// `litecd.dev/manage: "true"`
         #[arg(long, env = "LITECD_OBSERVE")]
         observe: bool,
+        /// DEPRECATED compatibility mode (feature argocd-ui-compat)
+        #[cfg(feature = "argocd-ui-compat")]
+        #[command(flatten)]
+        argocd_ui: compat::argocd_ui::Flags,
     },
 }
 
@@ -84,6 +89,8 @@ fn main() -> Result<()> {
             listen,
             application_namespaces,
             observe,
+            #[cfg(feature = "argocd-ui-compat")]
+            argocd_ui,
         } => {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -112,6 +119,19 @@ fn main() -> Result<()> {
                 let ctx = std::sync::Arc::new(ctx);
                 if observe {
                     tracing::info!("observe mode: comparing only, nothing is written");
+                }
+                // DEPRECATED: resource trees for Argo CD's web UI (docs/spec.md,
+                // Deprecated compatibility); a write, so not in observe mode.
+                #[cfg(feature = "argocd-ui-compat")]
+                if !observe {
+                    compat::argocd_ui::start(ctx.clone(), &argocd_ui)?;
+                }
+                #[cfg(not(feature = "argocd-ui-compat"))]
+                if std::env::var("LITECD_ARGOCD_UI_CACHE").is_ok_and(|v| !v.is_empty()) {
+                    tracing::warn!(
+                        "LITECD_ARGOCD_UI_CACHE is ignored: this build has no argocd-ui-compat \
+                         feature (the image tagged -argocd-ui has it)"
+                    );
                 }
                 *ctx.app_namespaces.write().await = app::split_list(&application_namespaces);
                 // Nothing is written while Argo CD's controllers run
@@ -156,4 +176,23 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::Cli;
+
+    /// The deprecated Argo CD UI mode exists only in builds with its feature.
+    #[test]
+    fn argocd_ui_cache_only_with_its_feature() {
+        let r = Cli::try_parse_from([
+            "litecd",
+            "controller",
+            "--argocd-ui-cache",
+            "redis://r:6379",
+        ]);
+        assert_eq!(r.is_ok(), cfg!(feature = "argocd-ui-compat"));
+    }
 }

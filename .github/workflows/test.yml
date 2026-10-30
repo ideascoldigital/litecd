@@ -26,3 +26,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # The deprecated argocd-ui-compat feature (docs/spec.md, Deprecated
+      # compatibility) builds and passes too.
+      - run: cargo clippy --all-targets --features argocd-ui-compat -- -D warnings
+      - run: cargo test --features argocd-ui-compat

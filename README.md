@@ -82,6 +82,31 @@ It can run beside Argo CD, even from a laptop with a kubeconfig:
 litecd controller --observe --cache-dir /tmp/litecd-observe
 ```
 
+## Deprecated compatibility: Argo CD's web UI
+
+Some clusters keep Argo CD's web UI (argocd-server, its repo server and
+Redis) running with litecd in place of Argo CD's application controller.
+Lists, sync and health work there as they are, but the UI's resource tree
+(Deployments, ReplicaSets, Pods) stays empty: argocd-server reads it from a
+Redis cache only Argo CD's controller fills. A compatibility mode fills it:
+
+```bash
+# image ghcr.io/<owner>/litecd:vX.Y.Z-argocd-ui, or:
+LITECD_FEATURES=argocd-ui-compat deploy/build.sh litecd:dev-argocd-ui
+litecd controller --argocd-ui-cache redis://argocd-redis-ha-haproxy:6379
+kubectl apply -f deploy/argocd-ui-compat/networkpolicy.yaml  # Argo CD's chart lets only its pods reach Redis
+```
+
+The password comes from the Secret `argocd-redis` (key `auth`). It costs
+about 4 MiB for 20 apps with 40 pods. The mode is
+**deprecated from birth**: it is not in the default build or image, it is
+off unless `--argocd-ui-cache` (`LITECD_ARGOCD_UI_CACHE`) is set, it logs a
+warning when it starts, it is coupled to Argo CD's internal cache format
+(it writes nothing when it cannot tell that format is the one it knows),
+and it will be removed once litecd has its own view of an app's resources,
+computed on demand from the Kubernetes API. Purpose, coupling, cost and
+removal: [docs/spec.md, Deprecated compatibility](docs/spec.md#deprecated-compatibility).
+
 ## Check your manifests
 
 `litecd check` reads your manifests and tells you which features they use
