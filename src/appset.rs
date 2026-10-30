@@ -508,6 +508,10 @@ async fn git(ctx: &Ctx, spec: &Value, go: bool) -> Result<Vec<Params>> {
     Ok(out)
 }
 
+/// How often a set that stands down looks again, besides each change of the
+/// guard.
+const STAND_DOWN_RECHECK: Duration = Duration::from_secs(60);
+
 /// The ApplicationSet controller: one reconcile per change, and again when a
 /// generator asks (requeueAfterSeconds; git and clusters every 3 minutes).
 pub async fn run(ctx: Arc<Ctx>) -> Result<()> {
@@ -544,7 +548,10 @@ pub async fn run(ctx: Arc<Ctx>) -> Result<()> {
         let ctx = ctx.clone();
         let timers2 = timers.clone();
         let handle = tokio::spawn(async move {
+            let mut guard = ctx.guard.subscribe();
             loop {
+                // Seen before the pass: a change during it wakes the next.
+                guard.borrow_and_update();
                 let next = match reconcile(&ctx, &name).await {
                     Ok(n) => n,
                     Err(e) => {
@@ -553,7 +560,14 @@ pub async fn run(ctx: Arc<Ctx>) -> Result<()> {
                     }
                 };
                 match next {
-                    Some(d) => tokio::time::sleep(d).await,
+                    // A change of the coexistence guard (Argo CD's
+                    // controllers gone or back) is a reason to look again.
+                    Some(d) => {
+                        tokio::select! {
+                            _ = tokio::time::sleep(d) => {}
+                            _ = guard.changed() => {}
+                        }
+                    }
                     None => break,
                 }
             }
@@ -602,6 +616,11 @@ async fn reconcile(ctx: &Ctx, name: &str) -> Result<Option<Duration>> {
     };
     if set["metadata"]["deletionTimestamp"].is_string() {
         return Ok(None);
+    }
+    // Argo CD's controllers own it while they run (docs/spec.md,
+    // Coexistence); a change of the guard wakes the set again.
+    if !ctx.guard.may_act_on_appset(&set) {
+        return Ok(Some(STAND_DOWN_RECHECK));
     }
     let spec = &set["spec"];
     let go = spec["goTemplate"].as_bool() == Some(true);
@@ -669,6 +688,10 @@ async fn reconcile(ctx: &Ctx, name: &str) -> Result<Option<Duration>> {
     let policy = spec["syncPolicy"]["applicationsSync"]
         .as_str()
         .unwrap_or("sync");
+    // Generating can take a while (git): look again before writing.
+    if !ctx.guard.may_act_on_appset(&set) {
+        return Ok(Some(STAND_DOWN_RECHECK));
+    }
     if error.is_none() {
         for (app_name, t) in &wanted {
             let mut meta = json!({

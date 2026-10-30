@@ -113,7 +113,7 @@ case_cleanup() {
                 k -n "$n" patch application "$a" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1
             done
     fi
-    k -n "$ARGOCD_NS" delete appprojects,secrets -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
+    k -n "$ARGOCD_NS" delete appprojects,secrets,statefulsets -l compat.litecd.dev/case="$id" --wait=false >/dev/null 2>&1
     for n in $(kubectl get namespaces -o name | sed 's#namespace/##' | grep -E "^$ns(-|$)"); do
         k delete namespace "$n" --wait=false >/dev/null 2>&1
     done
@@ -122,9 +122,10 @@ case_cleanup() {
 for dir in "$COMPAT_DIR"/cases/*/; do
     id=$(basename "$dir")
     [[ -n "$only" && ",$only," != *",$id,"* ]] && continue
-    desc="" timeout=180 phase=1
+    desc="" timeout=180 phase=1 targets="argocd litecd" golden=1
     set +u; source "$dir/case.sh"; set -u
     [[ -n "$phases" && ",$phases," != *",$phase,"* ]] && continue
+    [[ " $targets " == *" $target "* ]] || continue
     log="$out/logs/$id.log"
     snaps="$out/snapshots/$id.jsonl"
     : >"$snaps"
@@ -154,6 +155,8 @@ for dir in "$COMPAT_DIR"/cases/*/; do
     if [[ -z "$status" ]]; then
         if ((rc != 0)); then
             status=fail
+        elif ((!golden)); then
+            status=pass
         elif python3 "$COMPAT_DIR/compare.py" "$snaps" "$COMPAT_DIR/golden/$id.json" $update 2>>"$log"; then
             status=pass
         else

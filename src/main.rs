@@ -4,6 +4,7 @@
 mod app;
 mod appset;
 mod check;
+mod coexist;
 mod controller;
 mod diff;
 mod gotemplate;
@@ -60,7 +61,10 @@ enum Command {
         listen: String,
         /// Compare every Application and log where litecd's status differs
         /// from the stored one, writing nothing: no status, sync, prune,
-        /// finalizer, ApplicationSet or webhook refresh (safe beside a running Argo CD)
+        /// finalizer, ApplicationSet or webhook refresh (safe beside a running Argo CD).
+        /// Without it, litecd still stands down while Argo CD's application
+        /// controller runs, except for Applications annotated
+        /// `litecd.dev/manage: "true"`
         #[arg(long, env = "LITECD_OBSERVE")]
         observe: bool,
     },
@@ -110,6 +114,11 @@ fn main() -> Result<()> {
                     tracing::info!("observe mode: comparing only, nothing is written");
                 }
                 *ctx.app_namespaces.write().await = app::split_list(&application_namespaces);
+                // Nothing is written while Argo CD's controllers run
+                // (docs/spec.md, Coexistence).
+                if !observe {
+                    tokio::spawn(coexist::run(ctx.clone()));
+                }
                 // A push refreshes apps through an annotation: a write.
                 if !listen.is_empty() && !observe {
                     let c = ctx.clone();

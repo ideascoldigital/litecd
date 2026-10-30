@@ -1,0 +1,40 @@
+# Two apps alike but for the annotation: litecd reconciles coexist-managed
+# while Argo CD's application controller runs, and coexist-left only once it
+# is gone.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coexist-managed
+  annotations:
+    litecd.dev/manage: "true"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coexist-left
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: <REPO_URL>
+    targetRevision: main
+    path: m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NS>-left
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

@@ -248,6 +248,10 @@ async fn refresh_matching(ctx: &Ctx, urls: &[String]) -> Result<usize> {
         if !hit {
             continue;
         }
+        // Argo CD's controller owns it while it runs: no annotation write.
+        if !ctx.guard.may_act_on_app(&app) {
+            continue;
+        }
         let name = app["metadata"]["name"].as_str().unwrap_or_default();
         let patch = json!({"metadata": {"annotations": {REFRESH: "normal"}}});
         if let Err(e) = ctx

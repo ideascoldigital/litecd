@@ -32,7 +32,9 @@ the snapshots of every case), not committed.
   applies, with `<REPO_URL>`, `<CHART_REPO>`, `<NS>` and `<CASE>` filled in
   (in `repo/` as well, for child Applications).
 - `case.sh`: `desc`, `phase` (the litecd phase that must pass it, from
-  docs/spec.md), optional `timeout`, and `t_case`, which uses `lib.sh`:
+  docs/spec.md), optional `timeout`, optional `targets` (default
+  `"argocd litecd"`) and `golden=0` (a case of litecd's own behaviour that
+  Argo CD has no counterpart for: its checks are the whole case), and `t_case`, which uses `lib.sh`:
   `repo_init`, `repo_commit`, `publish_chart`, `app_apply`, `app_sync` (an
   `operation`, as the CLI and UI start a sync), `app_refresh`, `wait_app`,
   `wait_rev`, `wait_op`, and `snapshot <label> <app>...`.
@@ -118,6 +120,7 @@ so litecd is compared on the same kind of cluster.
 | appset_clusters_secret | 3 | clusters generator with a selector: the labelled Secret, not in-cluster |
 | apps_any_namespace | 3 | Applications in another namespace (`application.namespaces`): `<ns>_<app>` tracking, heal, finalizer; a project without the source namespace (UnknownError); a namespace not enabled is ignored |
 | sync_windows | 3 | deny and allow windows by app, namespace, cluster and AND; manual syncs held (`manualSync` lets them through); a window removed |
+| coexistence | 1 | litecd only, no golden file: with a stand-in `argocd-application-controller` StatefulSet running, only the app annotated `litecd.dev/manage` is touched; scaled to 0, litecd takes over; back, it stands down (no refresh, no finalizer removal) |
 
 ## litecd
 

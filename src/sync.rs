@@ -180,6 +180,11 @@ pub trait Progress {
 
 pub const TERMINATED: &str = "operation terminated";
 
+/// Why a sync stopped where it was: Argo CD's application controller came
+/// back (docs/spec.md, Coexistence). Nothing more is written, not even the
+/// SyncFail hooks or the cleanup of the hooks it created.
+pub const STOOD_DOWN: &str = "stopped: Argo CD's application controller is running";
+
 /// The failure of a sync: the message and the results so far.
 pub struct Failed {
     pub message: String,
@@ -209,6 +214,14 @@ pub async fn run(
     let kube = &cmp.kube;
     let mut results = Vec::new();
     let dest_ns = app::destination_namespace(app_obj);
+    // Checked before every write: the guard can turn while a sync waits.
+    let stood_down = || !ctx.guard.may_act_on_app(app_obj);
+    if stood_down() {
+        return Err(Failed {
+            message: STOOD_DOWN.to_string(),
+            results,
+        });
+    }
 
     // FailOnSharedResource=true: nothing is applied when another app
     // manages one of these resources.
@@ -400,6 +413,9 @@ pub async fn run(
         // PreSync hooks, each to its end.
         let pre = phase_hooks("PreSync");
         if !pre.is_empty() {
+            if stood_down() {
+                return Err(STOOD_DOWN.to_string());
+            }
             run_hooks(
                 ctx,
                 kube,
@@ -427,6 +443,9 @@ pub async fn run(
             let mut applied: Vec<&Desired> = Vec::new();
             waited_last = false;
             for t in tasks.iter().filter(|t| t.wave() == *wave) {
+                if stood_down() {
+                    return Err(STOOD_DOWN.to_string());
+                }
                 match t {
                     // ApplyOutOfSyncOnly: what is in sync is left alone.
                     Task::Apply(_, Some(state))
@@ -461,6 +480,9 @@ pub async fn run(
                 .filter(|d| d.wave == *wave)
                 .collect();
             if !wave_hooks.is_empty() {
+                if stood_down() {
+                    return Err(STOOD_DOWN.to_string());
+                }
                 run_hooks(
                     ctx,
                     kube,
@@ -487,6 +509,9 @@ pub async fn run(
             if !wait_healthy(ctx, kube, &all_applied, &results, progress).await {
                 return Err(TERMINATED.to_string());
             }
+            if stood_down() {
+                return Err(STOOD_DOWN.to_string());
+            }
             run_hooks(
                 ctx,
                 kube,
@@ -510,6 +535,7 @@ pub async fn run(
                 no_more_tasks: waited_last,
             })
         }
+        Err(message) if message == STOOD_DOWN => Err(Failed { message, results }),
         Err(message) => {
             if message != TERMINATED {
                 let fail = phase_hooks("SyncFail");
