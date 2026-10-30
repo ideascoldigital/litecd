@@ -580,9 +580,16 @@ pub struct Child {
 }
 
 impl Child {
+    /// A watched object: the items of a list (and so of a watcher's first
+    /// listing) carry no apiVersion and kind, so they come from the watched
+    /// resource.
     pub fn of(kind: &'static str, obj: &Value, custom: &health::Customizations) -> Child {
-        let h = health::assess(obj, custom).ok().flatten();
-        let node = node_of(obj, h.as_ref());
+        let mut obj = obj.clone();
+        let ar = api_resource(kind);
+        obj["apiVersion"] = Value::String(ar.api_version.clone());
+        obj["kind"] = Value::String(ar.kind.clone());
+        let h = health::assess(&obj, custom).ok().flatten();
+        let node = node_of(&obj, h.as_ref());
         let owners = node.parent_refs.iter().map(|r| r.uid.clone()).collect();
         Child { kind, node, owners }
     }
@@ -623,13 +630,33 @@ pub fn build(managed: &[Node], children: &[&Child]) -> Tree {
     }
 }
 
+/// The first node Argo CD's UI cannot show: one without kind or version
+/// (group is empty for the core API).
+pub fn incomplete(tree: &Tree) -> Option<&Node> {
+    tree.nodes
+        .iter()
+        .chain(&tree.orphaned_nodes)
+        .find(|n| n.r.kind.is_empty() || n.r.version.is_empty())
+}
+
 /// The managed resources of a comparison, as nodes; one that is not in the
 /// cluster is Missing.
 pub fn managed_nodes(cmp: &Comparison) -> Vec<Node> {
     cmp.resources
         .iter()
         .map(|r| match &r.live {
-            Some(live) => node_of(live, r.health.as_ref()),
+            Some(live) => {
+                let mut n = node_of(live, r.health.as_ref());
+                // A live object read from a list has no apiVersion or kind.
+                if n.r.kind.is_empty() {
+                    n.r.kind = r.key.kind.clone();
+                    n.r.group = r.key.group.clone();
+                }
+                if n.r.version.is_empty() {
+                    n.r.version = r.version.clone();
+                }
+                n
+            }
             None => Node {
                 r: Ref {
                     group: r.key.group.clone(),
@@ -1159,6 +1186,15 @@ impl Ui {
                     children.extend(st.children.get(&k).unwrap_or(&empty).values());
                 }
                 let tree = build(&app.managed, &children);
+                // Argo CD's UI breaks on a node without kind or version:
+                // such a tree is never written.
+                if let Some(bad) = incomplete(&tree) {
+                    warn!(
+                        "argocd-ui: not writing the tree of {instance}: node {} has no kind or version",
+                        bad.full_name()
+                    );
+                    continue;
+                }
                 let json = serde_json::to_vec(&tree)?;
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 json.hash(&mut h);
@@ -1450,6 +1486,59 @@ mod tests {
         assert!(UI.get().is_none());
     }
 
+    /// Objects as a list or watch returns them: no apiVersion, no kind.
+    #[test]
+    fn watched_objects_get_their_kind() {
+        let custom = health::Customizations::default();
+        let strip = |mut v: Value| {
+            let o = v.as_object_mut().unwrap();
+            o.remove("apiVersion");
+            o.remove("kind");
+            v
+        };
+        let r = Child::of("ReplicaSet", &strip(rs("r1", "d1")), &custom);
+        assert_eq!(
+            (
+                r.node.r.group.as_str(),
+                r.node.r.version.as_str(),
+                r.node.r.kind.as_str()
+            ),
+            ("apps", "v1", "ReplicaSet")
+        );
+        assert_eq!(
+            r.node.health.as_ref().map(|h| h.status.as_str()),
+            Some("Healthy")
+        );
+        let p = Child::of("Pod", &strip(pod("p1", "r1")), &custom);
+        assert_eq!(
+            (
+                p.node.r.group.as_str(),
+                p.node.r.version.as_str(),
+                p.node.r.kind.as_str()
+            ),
+            ("", "v1", "Pod")
+        );
+        assert!(p.node.info.iter().any(|i| i.name == "Containers"));
+        assert_eq!(p.node.parent_refs[0].kind, "ReplicaSet");
+        assert_eq!(p.node.parent_refs[0].version, "v1");
+        let j = Child::of(
+            "Job",
+            &json!({"metadata": {"name": "j", "namespace": "n", "uid": "j1"}}),
+            &custom,
+        );
+        assert_eq!(
+            (j.node.r.group.as_str(), j.node.r.kind.as_str()),
+            ("batch", "Job")
+        );
+
+        let managed = vec![node_of(&deployment(), None)];
+        let tree = build(&managed, &[&r, &p]);
+        assert!(incomplete(&tree).is_none());
+        let mut bad = tree.clone();
+        bad.nodes[0].r.kind.clear();
+        assert!(incomplete(&bad).is_some());
+    }
+
     /// A tree Argo CD v3.5.5's application controller wrote to Redis (the
     /// compat case argocd_ui_tree, GET app|resources-tree|<app>|1.8.3.gz).
     #[test]
@@ -1460,6 +1549,8 @@ mod tests {
         assert!(
             kinds.contains("Deployment") && kinds.contains("ReplicaSet") && kinds.contains("Pod")
         );
+        // Every node has a kind and a version, as the UI needs.
+        assert!(incomplete(&tree).is_none());
         // Our encoding of it reads back the same.
         assert_eq!(decode(&encode(&tree, &gz()).unwrap(), &gz()).unwrap(), tree);
     }
