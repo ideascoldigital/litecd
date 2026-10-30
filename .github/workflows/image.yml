@@ -80,6 +80,15 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+        # install.yaml: deploy/install on this release's image;
+        # takeover.yaml: only litecd's own objects, for a namespace Argo CD
+        # is installed in. install.sh applies one of them.
         run: |
+          deploy/bundle.sh "$IMAGE:$GITHUB_REF_NAME" > install.yaml
+          deploy/bundle.sh --takeover "$IMAGE:$GITHUB_REF_NAME" > takeover.yaml
+          sha256sum install.yaml takeover.yaml > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
-            --notes "Image: \`$IMAGE:$GITHUB_REF_NAME\` (also \`$IMAGE:$GITHUB_SHA\`). With the deprecated Argo CD UI compatibility mode (docs/spec.md, Deprecated compatibility): \`$IMAGE:$GITHUB_REF_NAME-argocd-ui\`."
+            --notes "Install on the cluster of your current kube context: \`curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | LITECD_VERSION=$GITHUB_REF_NAME sh\`, or \`kubectl create namespace argocd && kubectl apply --server-side -f https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/install.yaml\`.
+
+          Image: \`$IMAGE:$GITHUB_REF_NAME\` (also \`$IMAGE:$GITHUB_SHA\`). With the deprecated Argo CD UI compatibility mode (docs/spec.md, Deprecated compatibility): \`$IMAGE:$GITHUB_REF_NAME-argocd-ui\`." \
+            install.yaml takeover.yaml SHA256SUMS
