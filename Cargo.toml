@@ -1,6 +1,6 @@
 [package]
 name = "litecd"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "GitOps continuous delivery in one small Rust binary that reads Argo CD's Application, AppProject and ApplicationSet manifests unchanged"
 license = "Apache-2.0"
