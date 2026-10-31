@@ -40,3 +40,12 @@ metadata:
   name: settings
 data:
   key: one
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: creds
+stringData:
+  password: not-a-real-password
+data:
+  token: bm90LWEtcmVhbC10b2tlbg==

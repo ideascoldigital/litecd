@@ -1,10 +1,12 @@
-desc="DEPRECATED argocd-ui-compat: the resource tree Argo CD's web UI reads from Redis (Deployment → ReplicaSet → Pods, a Job's pod) equals the one Argo CD's controller writes; litecd refuses a cache of another format and deletes a gone app's tree"
+desc="DEPRECATED argocd-ui-compat: the resource tree and managed resources Argo CD's web UI reads from Redis (Deployment → ReplicaSet → Pods, a Job's pod; a Secret masked) equal those Argo CD's controller writes; litecd refuses a cache of another format and deletes a gone app's keys"
 phase=1
 timeout=420
 
 # The tree's nodes: Deployment, ReplicaSet, its pods, Service, ConfigMap,
-# Job and its pod.
-nodes() { echo $((6 + $1)); }
+# Secret, Job and its pod; the managed resources: Deployment, Service,
+# ConfigMap, Secret, Job.
+nodes() { echo $((7 + $1)); }
+MANAGED=5
 
 redis_cli() { # args...: redis-cli in the argocd-redis pod, with the password
     local pw
@@ -76,7 +78,9 @@ ui_compat_off() {
     with_timeout 180 kubectl -n "$ARGOCD_NS" rollout status deploy/litecd --timeout 3m >/dev/null
 }
 
-_no_tree() { [[ -z "$(redis_cli --raw EXISTS 'app|resources-tree|argocd-ui-tree|1.8.3.gz' | grep -v '^0$')" ]]; }
+_no_tree() {
+    [[ "$(redis_cli --raw EXISTS 'app|resources-tree|argocd-ui-tree|1.8.3.gz' 'app|managed-resources|argocd-ui-tree|1.8.3.gz')" == 0 ]]
+}
 
 t_case() {
     if [[ $target == litecd ]]; then
@@ -87,7 +91,7 @@ t_case() {
     app_apply app.yaml
     wait_app argocd-ui-tree Synced Healthy 180
     python3 "$COMPAT_DIR/ui_tree.py" --app argocd-ui-tree --label two-replicas --ns "$NS" \
-        --argocd-ns "$ARGOCD_NS" --nodes "$(nodes 2)" >>"$SNAPSHOTS"
+        --argocd-ns "$ARGOCD_NS" --nodes "$(nodes 2)" --managed $MANAGED >>"$SNAPSHOTS"
 
     # One replica: the tree follows the pods.
     perl -pi -e 's/replicas: 2/replicas: 1/' "$(repo_dir)/m/web.yaml"
@@ -95,7 +99,7 @@ t_case() {
     app_refresh argocd-ui-tree
     wait_rev argocd-ui-tree
     python3 "$COMPAT_DIR/ui_tree.py" --app argocd-ui-tree --label one-replica --ns "$NS" \
-        --argocd-ns "$ARGOCD_NS" --nodes "$(nodes 1)" >>"$SNAPSHOTS"
+        --argocd-ns "$ARGOCD_NS" --nodes "$(nodes 1)" --managed $MANAGED >>"$SNAPSHOTS"
 
     if [[ $target == litecd ]]; then
         # A deleted app's tree goes with it.

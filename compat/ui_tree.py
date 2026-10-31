@@ -1,4 +1,4 @@
-"""ui_tree.py --app <instance> --label <label> --ns <NS> --nodes <n>
+"""ui_tree.py --app <instance> --label <label> --ns <NS> --nodes <n> [--managed <n>]
 
 The resource tree of an Application as Argo CD's web UI reads it from
 Redis (`app|resources-tree|<instance>|1.8.3.gz`, the Redis of the
@@ -26,10 +26,10 @@ def kubectl(*args):
     return p.stdout
 
 
-def read_tree(argocd_ns, instance):
+def read_tree(argocd_ns, instance, what="resources-tree"):
     pw = json.loads(kubectl("-n", argocd_ns, "get", "secret", "argocd-redis", "-o", "json"))["data"]["auth"]
     pw = base64.b64decode(pw).decode()
-    key = f"app|resources-tree|{instance}|1.8.3.gz"
+    key = f"app|{what}|{instance}|1.8.3.gz"
     # --raw writes the value as it is, plus a newline.
     out = kubectl("-n", argocd_ns, "exec", "deploy/argocd-redis", "--", "sh", "-c",
                   'REDISCLI_AUTH="$1" redis-cli --raw GET "$2" | base64', "_", pw, key)
@@ -39,7 +39,8 @@ def read_tree(argocd_ns, instance):
     if not raw:
         return None
     if os.environ.get("UI_TREE_RAW_DIR"):  # the value as it is, for unit tests
-        with open(os.path.join(os.environ["UI_TREE_RAW_DIR"], instance + ".json.gz"), "wb") as f:
+        name = instance + ("" if what == "resources-tree" else "." + what) + ".json.gz"
+        with open(os.path.join(os.environ["UI_TREE_RAW_DIR"], name), "wb") as f:
             f.write(raw)
     return json.loads(gzip.decompress(raw))
 
@@ -75,6 +76,28 @@ def normalize(tree, ns):
     return sorted(out, key=lambda n: json.dumps(n, sort_keys=True))
 
 
+def normalize_managed(items, ns):
+    """The managed resources (the UI's resource details and Diff tab):
+    which states are there, the objects they name, a Secret's masked data."""
+    out = []
+    for r in items or []:
+        e = {k: r.get(k) for k in ("group", "kind", "name", "hook", "modified") if r.get(k)}
+        e["namespace"] = "<NS>" if r.get("namespace") == ns else r.get("namespace", "")
+        for field in ("targetState", "liveState", "normalizedLiveState", "predictedLiveState"):
+            obj = json.loads(r[field]) if r.get(field) else None
+            if obj is None:
+                e[field] = None
+                continue
+            seen = {"kind": obj.get("kind"), "name": (obj.get("metadata") or {}).get("name")}
+            if obj.get("kind") == "Secret":
+                seen["data"] = obj.get("data")
+                seen["stringData"] = obj.get("stringData")
+            e[field] = seen
+        e["resourceVersion"] = bool(r.get("resourceVersion"))
+        out.append(e)
+    return out
+
+
 def settled(nodes, want):
     if len(nodes) != want:
         return False
@@ -97,6 +120,7 @@ def main():
     ap.add_argument("--label", required=True)
     ap.add_argument("--ns", required=True)
     ap.add_argument("--nodes", type=int, required=True)
+    ap.add_argument("--managed", type=int, default=0, help="also app|managed-resources, with this many items")
     ap.add_argument("--argocd-ns", default="argocd")
     ap.add_argument("--timeout", type=int, default=180)
     a = ap.parse_args()
@@ -106,10 +130,15 @@ def main():
         try:
             tree = read_tree(a.argocd_ns, a.app)
             nodes = normalize(tree, a.ns) if tree else []
-            if settled(nodes, a.nodes) and nodes == last:
-                print(json.dumps({"label": a.label, "tree": nodes}, sort_keys=True))
+            managed = normalize_managed(read_tree(a.argocd_ns, a.app, "managed-resources"), a.ns) if a.managed else None
+            snap = (nodes, managed)
+            if settled(nodes, a.nodes) and (managed is None or len(managed) == a.managed) and snap == last:
+                out = {"label": a.label, "tree": nodes}
+                if managed is not None:
+                    out["managed"] = managed
+                print(json.dumps(out, sort_keys=True))
                 return 0
-            last, err = nodes, f"{len(nodes)} nodes"
+            last, err = snap, f"{len(nodes)} nodes, {len(managed or [])} managed"
         except Exception as e:  # noqa: BLE001 - retried until the deadline
             err = str(e)
         time.sleep(3)

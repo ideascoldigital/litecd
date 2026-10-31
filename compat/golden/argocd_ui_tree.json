@@ -1,6 +1,140 @@
 [
   {
     "label": "two-replicas",
+    "managed": [
+      {
+        "kind": "ConfigMap",
+        "liveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "name": "settings",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "predictedLiveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        }
+      },
+      {
+        "kind": "Secret",
+        "liveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "name": "creds",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "predictedLiveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        }
+      },
+      {
+        "kind": "Service",
+        "liveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "name": "web",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "predictedLiveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Service",
+          "name": "web"
+        }
+      },
+      {
+        "group": "apps",
+        "kind": "Deployment",
+        "liveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "name": "web",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "predictedLiveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Deployment",
+          "name": "web"
+        }
+      },
+      {
+        "group": "batch",
+        "kind": "Job",
+        "liveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "name": "once",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "predictedLiveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Job",
+          "name": "once"
+        }
+      }
+    ],
     "tree": [
       {
         "group": "apps",
@@ -217,6 +351,12 @@
       {
         "kind": "ConfigMap",
         "name": "settings",
+        "namespace": "<NS>",
+        "version": "v1"
+      },
+      {
+        "kind": "Secret",
+        "name": "creds",
         "namespace": "<NS>",
         "version": "v1"
       }
@@ -224,6 +364,140 @@
   },
   {
     "label": "one-replica",
+    "managed": [
+      {
+        "kind": "ConfigMap",
+        "liveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "name": "settings",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "predictedLiveState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "ConfigMap",
+          "name": "settings"
+        }
+      },
+      {
+        "kind": "Secret",
+        "liveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "name": "creds",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "predictedLiveState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "data": {
+            "password": "++++++++",
+            "token": "++++++++"
+          },
+          "kind": "Secret",
+          "name": "creds",
+          "stringData": null
+        }
+      },
+      {
+        "kind": "Service",
+        "liveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "name": "web",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "predictedLiveState": {
+          "kind": "Service",
+          "name": "web"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Service",
+          "name": "web"
+        }
+      },
+      {
+        "group": "apps",
+        "kind": "Deployment",
+        "liveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "name": "web",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "predictedLiveState": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Deployment",
+          "name": "web"
+        }
+      },
+      {
+        "group": "batch",
+        "kind": "Job",
+        "liveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "name": "once",
+        "namespace": "<NS>",
+        "normalizedLiveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "predictedLiveState": {
+          "kind": "Job",
+          "name": "once"
+        },
+        "resourceVersion": true,
+        "targetState": {
+          "kind": "Job",
+          "name": "once"
+        }
+      }
+    ],
     "tree": [
       {
         "group": "apps",
@@ -391,6 +665,12 @@
       {
         "kind": "ConfigMap",
         "name": "settings",
+        "namespace": "<NS>",
+        "version": "v1"
+      },
+      {
+        "kind": "Secret",
+        "name": "creds",
         "namespace": "<NS>",
         "version": "v1"
       }

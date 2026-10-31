@@ -143,11 +143,23 @@ Deployment revision; Service selector; `link.argocd.argoproj.io/*` links),
 and writes it as Argo CD's controller does: key
 `app|resources-tree|<instance>|<cache version>` plus `.gz` with gzip
 compression, value the `ApplicationTree` JSON (gzipped), TTL 1 h
-(`--argocd-ui-cache-ttl`), then a publish on
-`app|managed-resources|<instance>|<cache version>` so an open UI reloads it.
-A tree is written only when it changed and again at half its TTL, only for
+(`--argocd-ui-cache-ttl`). Beside it, `app|managed-resources|<instance>|...`
+(same encoding and TTL): the app's managed resources as Argo CD's
+`[]ResourceDiff`, which the UI reads when a resource is opened and for its
+Diff tab: group, kind, namespace, name, resourceVersion, `modified` (out of
+sync), and as JSON strings (`null` when absent) the desired object, the live
+one, the live one normalized (no status, no creationTimestamp) and the
+predicted live one (the desired fields over the normalized live object when
+out of sync). A Secret's data (stringData folded in) is masked as Argo CD's
+HideSecretData masks it, in both objects and their last-applied
+annotations: `++++++++`, a longer run for each different value of a key.
+Then a publish on `app|managed-resources|<instance>|<cache version>` so an
+open UI reloads them. Both are written only when they changed and again at
+half their TTL, only for
 apps litecd compared in the last three reconcile intervals (never for one
-Argo CD's controller owns while it runs), and deleted when the app goes.
+Argo CD's controller owns while it runs), and deleted when the app goes;
+nothing is written for an app with a node or resource lacking kind (or a
+node lacking version, or a resource lacking name).
 Pod logs and live manifests in the UI then go to the Kubernetes API through
 argocd-server, as with Argo CD. Argo CD's chart admits only its own pods to
 Redis with a NetworkPolicy: `deploy/argocd-ui-compat/networkpolicy.yaml`
@@ -160,14 +172,17 @@ when the format is known: argocd-server's image is a version it was checked
 against (v2.6 to v3.5) or `--argocd-ui-cache-version` names the cache
 version; the compression it is started with (`--redis-compress`,
 `REDIS_COMPRESSION` or the argocd-cmd-params-cm key it names) agrees with
-`--argocd-ui-cache-compression` when given; every tree key already in Redis
-has that format and the first one decodes. Otherwise it logs why and writes
+`--argocd-ui-cache-compression` when given; every tree and managed-resources
+key already in Redis has that format and the first of each decodes. Otherwise it logs why and writes
 nothing; it checks again every 5 minutes. Not written: orphaned resources,
 hosts (the UI's node view), Ingress and child Application node info, other
 child kinds (ControllerRevisions, EndpointSlices, PVCs of a StatefulSet),
-`app|managed-resources|` (the UI's Diff tab: use the `<app>.diff` Secret),
-Redis over TLS or Sentinel. Compat case `argocd_ui_tree` compares the tree
-litecd writes with the one Argo CD v3.5.5 writes for the same app.
+hooks among the managed resources, Argo CD's scheme defaults in the
+normalized and predicted live objects (the Diff tab may show defaulted
+fields), `resource.sensitive.mask.annotations`, Redis over TLS or Sentinel.
+Compat case `argocd_ui_tree` compares the tree and managed resources litecd
+writes with those Argo CD v3.5.5 writes for the same app (a Secret
+included).
 
 **Cost.** Measured 2026-10-30 on the compat cluster (litek8s dev cluster, one
 node) with Argo CD v3.5.5's argocd-server and Redis, its application

@@ -20,9 +20,12 @@
 //! `app|resources-tree|<instance>|<CacheVersion>` plus `.gz` when Redis
 //! compression is gzip (the default), holding the JSON of an
 //! `ApplicationTree` (gzipped), set with a TTL (the controller's
-//! appStateCacheExpiration, 1 h); a publish on
-//! `app|managed-resources|<instance>|<CacheVersion>` tells a UI that streams
-//! the tree to read it again. litecd writes the tree only when it changed
+//! appStateCacheExpiration, 1 h); beside it
+//! `app|managed-resources|<instance>|...`, the managed resources as a JSON
+//! `[]ResourceDiff` (desired, live, normalized and predicted live objects as
+//! JSON strings, Secret values masked), which the UI reads when a resource
+//! is opened; a publish on `app|managed-resources|<instance>|<CacheVersion>`
+//! tells a UI that streams the tree to read both again. litecd writes the tree only when it changed
 //! (and again before the TTL runs out), and only for apps it reconciled
 //! recently, so it never overwrites the tree of an app Argo CD's own
 //! controller owns again.
@@ -35,8 +38,8 @@
 //! Children come from watches of the child kinds only (ReplicaSets and
 //! Pods; Jobs under a CronJob), only in the namespaces the apps deploy
 //! resources of a parent kind to. Not written: orphaned nodes, hosts (the
-//! UI's node view), ingress and Application node info, and
-//! `app|managed-resources|` (the Diff tab).
+//! UI's node view), ingress and Application node info, hooks among the
+//! managed resources, scheme defaults in normalized live objects.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -113,6 +116,13 @@ fn known_cache_version(major: u32, minor: u32) -> Option<&'static str> {
 pub fn tree_key(instance: &str, f: &Format) -> String {
     let gz = if f.gzip { ".gz" } else { "" };
     format!("app|resources-tree|{instance}|{}{gz}", f.cache_version)
+}
+
+/// The managed resources (desired and live state of each, for the UI's
+/// resource details and Diff tab): `app|managed-resources|<instance>|...`.
+pub fn managed_key(instance: &str, f: &Format) -> String {
+    let gz = if f.gzip { ".gz" } else { "" };
+    format!("app|managed-resources|{instance}|{}{gz}", f.cache_version)
 }
 
 /// Where argocd-server listens for a tree that changed.
@@ -212,8 +222,8 @@ pub struct Tree {
 /// The value argocd-server reads: the JSON (with encoding/json's trailing
 /// newline), gzipped when the format says so. go-redis/cache stores a
 /// []byte as it is, without its own header.
-pub fn encode(tree: &Tree, f: &Format) -> Result<Vec<u8>> {
-    let mut json = serde_json::to_vec(tree)?;
+pub fn encode<T: Serialize>(value: &T, f: &Format) -> Result<Vec<u8>> {
+    let mut json = serde_json::to_vec(value)?;
     json.push(b'\n');
     if !f.gzip {
         return Ok(json);
@@ -224,6 +234,14 @@ pub fn encode(tree: &Tree, f: &Format) -> Result<Vec<u8>> {
 }
 
 pub fn decode(data: &[u8], f: &Format) -> Result<Tree> {
+    decode_as(data, f).context("not an ApplicationTree")
+}
+
+pub fn decode_managed(data: &[u8], f: &Format) -> Result<Vec<ResourceDiff>> {
+    decode_as(data, f).context("not a list of ResourceDiffs")
+}
+
+fn decode_as<T: serde::de::DeserializeOwned>(data: &[u8], f: &Format) -> Result<T> {
     let mut json = Vec::new();
     if f.gzip {
         flate2::read::GzDecoder::new(data)
@@ -232,7 +250,243 @@ pub fn decode(data: &[u8], f: &Format) -> Result<Tree> {
     } else {
         json = data.to_vec();
     }
-    serde_json::from_slice(&json).context("not an ApplicationTree")
+    Ok(serde_json::from_slice(&json)?)
+}
+
+// --- managed resources (Argo CD's []ResourceDiff) --------------------------
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// One managed resource as Argo CD's controller caches it: the objects as
+/// JSON strings ("null" when absent), Secret values masked.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ResourceDiff {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub group: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub namespace: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(
+        rename = "targetState",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub target_state: String,
+    #[serde(
+        rename = "liveState",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub live_state: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub diff: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hook: bool,
+    #[serde(
+        rename = "normalizedLiveState",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub normalized_live_state: String,
+    #[serde(
+        rename = "predictedLiveState",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub predicted_live_state: String,
+    #[serde(
+        rename = "resourceVersion",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub resource_version: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub modified: bool,
+}
+
+impl ResourceDiff {
+    fn full_name(&self) -> String {
+        format!(
+            "{}/{}/{}/{}",
+            self.group, self.kind, self.namespace, self.name
+        )
+    }
+}
+
+const MASK: &str = "++++++++";
+const LAST_APPLIED: &str = "kubectl.kubernetes.io/last-applied-configuration";
+
+/// A Secret's stringData folded into data (base64), as the API server and
+/// Argo CD's NormalizeSecret do.
+fn normalize_secret(obj: &mut Value) {
+    if obj["kind"] != "Secret" {
+        return;
+    }
+    let Some(map) = obj.as_object_mut() else {
+        return;
+    };
+    let Some(Value::Object(sd)) = map.remove("stringData") else {
+        return;
+    };
+    use base64::Engine;
+    let data = map.entry("data").or_insert_with(|| json!({}));
+    if !data.is_object() {
+        *data = json!({});
+    }
+    for (k, v) in sd {
+        let text = v
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| v.to_string());
+        data[k] = Value::String(base64::engine::general_purpose::STANDARD.encode(text));
+    }
+}
+
+/// Argo CD's HideSecretData: every value of a Secret's data, in the
+/// desired object, the live one and their last-applied annotations,
+/// becomes `++++++++`; for one key, each different value a longer run
+/// (`++++++++++++`, ...), so a diff still shows which values differ.
+pub fn hide_secret_data(target: &mut Value, live: &mut Value) {
+    let la = |o: &Value| {
+        o["metadata"]["annotations"][LAST_APPLIED]
+            .as_str()
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+    };
+    let mut target_la = la(target);
+    let mut live_la = la(live);
+    let mut objs: Vec<&mut Value> = vec![target, live];
+    if let Some(t) = target_la.as_mut() {
+        objs.push(t);
+    }
+    if let Some(l) = live_la.as_mut() {
+        objs.push(l);
+    }
+    for o in objs.iter_mut() {
+        normalize_secret(o);
+    }
+    let keys: BTreeSet<String> = objs
+        .iter()
+        .filter_map(|o| o["data"].as_object())
+        .flat_map(|m| m.keys().cloned())
+        .collect();
+    for k in keys {
+        let mut next = MASK.to_string();
+        let mut seen: HashMap<String, String> = HashMap::new();
+        for o in objs.iter_mut() {
+            let Some(v) = o.get_mut("data").and_then(|d| d.get_mut(&k)) else {
+                continue;
+            };
+            let val = v
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string());
+            let r = seen
+                .entry(val)
+                .or_insert_with(|| {
+                    let r = next.clone();
+                    next.push_str("++++");
+                    r
+                })
+                .clone();
+            *v = Value::String(r);
+        }
+    }
+    drop(objs);
+    for (o, l) in [(target, target_la), (live, live_la)] {
+        if let Some(l) = l {
+            o["metadata"]["annotations"][LAST_APPLIED] = Value::String(l.to_string());
+        } else if o["metadata"]["annotations"][LAST_APPLIED].is_string() {
+            // Not JSON: hidden whole.
+            o["metadata"]["annotations"][LAST_APPLIED] = Value::String(MASK.into());
+        }
+    }
+}
+
+/// The live object as Argo CD's diff normalizes it: no status, no
+/// creationTimestamp.
+fn normalized_live(live: &Value) -> Value {
+    let mut v = live.clone();
+    if let Some(m) = v.as_object_mut() {
+        m.remove("status");
+    }
+    if let Some(m) = v["metadata"].as_object_mut() {
+        m.remove("creationTimestamp");
+    }
+    v
+}
+
+/// `b`'s fields over `a`'s: what the live object becomes once the desired
+/// one is applied, near enough for the UI's Diff tab.
+fn overlay(a: &Value, b: &Value) -> Value {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            let mut out = x.clone();
+            for (k, v) in y {
+                let merged = match x.get(k) {
+                    Some(av) => overlay(av, v),
+                    None => v.clone(),
+                };
+                out.insert(k.clone(), merged);
+            }
+            Value::Object(out)
+        }
+        (_, b) => b.clone(),
+    }
+}
+
+/// The managed resources of a comparison as Argo CD's controller caches
+/// them, sorted by group/kind/namespace/name.
+pub fn managed_diffs(cmp: &Comparison) -> Vec<ResourceDiff> {
+    let mut out: Vec<ResourceDiff> = cmp
+        .resources
+        .iter()
+        .map(|r| {
+            let mut target = cmp
+                .desired
+                .iter()
+                .find(|d| d.key == r.key)
+                .map(|d| d.obj.clone())
+                .unwrap_or(Value::Null);
+            let mut live = r.live.clone().unwrap_or(Value::Null);
+            if r.key.kind == "Secret" && r.key.group.is_empty() {
+                hide_secret_data(&mut target, &mut live);
+            }
+            let normalized = if live.is_null() {
+                Value::Null
+            } else {
+                normalized_live(&live)
+            };
+            let predicted = match (&target, r.synced) {
+                (Value::Null, _) => Value::Null,
+                (_, true) => normalized.clone(),
+                (t, false) if normalized.is_null() => t.clone(),
+                (t, false) => overlay(&normalized, t),
+            };
+            ResourceDiff {
+                group: r.key.group.clone(),
+                kind: r.key.kind.clone(),
+                namespace: r.key.namespace.clone(),
+                name: r.key.name.clone(),
+                target_state: target.to_string(),
+                live_state: live.to_string(),
+                normalized_live_state: normalized.to_string(),
+                predicted_live_state: predicted.to_string(),
+                resource_version: live["metadata"]["resourceVersion"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                modified: !r.synced,
+                ..Default::default()
+            }
+        })
+        .collect();
+    out.sort_by_key(ResourceDiff::full_name);
+    out
 }
 
 // --- nodes -------------------------------------------------------------
@@ -704,6 +958,7 @@ type NsKey = (String, String);
 struct App {
     server: String,
     managed: Vec<Node>,
+    diffs: Vec<ResourceDiff>,
     updated: Instant,
     dirty: bool,
     /// The hash of the tree last written, and when.
@@ -784,7 +1039,14 @@ pub fn start(ctx: Arc<Ctx>, flags: &Flags) -> Result<()> {
 /// The controller compared an app (it reconciles it: litecd owns it now).
 pub async fn update(instance: &str, kube: &Kube, server: &str, cmp: &Comparison) {
     if let Some(ui) = UI.get() {
-        ui.update(instance, kube, server, managed_nodes(cmp)).await;
+        ui.update(
+            instance,
+            kube,
+            server,
+            managed_nodes(cmp),
+            managed_diffs(cmp),
+        )
+        .await;
     }
 }
 
@@ -812,18 +1074,21 @@ impl Ui {
         kube: &Kube,
         server: &str,
         managed: Vec<Node>,
+        diffs: Vec<ResourceDiff>,
     ) {
         let mut st = self.state.lock().await;
         let app = st.apps.entry(instance.to_string()).or_insert_with(|| App {
             server: server.to_string(),
             managed: Vec::new(),
+            diffs: Vec::new(),
             updated: Instant::now(),
             dirty: true,
             written: None,
         });
         app.updated = Instant::now();
-        if app.managed != managed || app.server != server {
+        if app.managed != managed || app.diffs != diffs || app.server != server {
             app.managed = managed;
+            app.diffs = diffs;
             app.server = server.to_string();
             app.dirty = true;
         }
@@ -976,43 +1241,51 @@ impl Ui {
         // this format.
         let want = tree_key("", &f);
         let want_suffix = want.trim_start_matches("app|resources-tree|");
-        let mut cursor = b"0".to_vec();
-        let mut checked = false;
-        for _ in 0..50 {
-            let reply = conn
-                .call(&[
-                    b"SCAN",
-                    &cursor,
-                    b"MATCH",
-                    b"app|resources-tree|*",
-                    b"COUNT",
-                    b"1000",
-                ])
-                .await?;
-            let Reply::Array(parts) = reply else {
-                bail!("SCAN: unexpected reply")
-            };
-            let (Some(Reply::Bulk(Some(next))), Some(Reply::Array(keys))) =
-                (parts.first(), parts.get(1))
-            else {
-                bail!("SCAN: unexpected reply");
-            };
-            for k in keys {
-                let Reply::Bulk(Some(k)) = k else { continue };
-                let k = String::from_utf8_lossy(k);
-                // A shard (`...|<n>|<version>`) or the tree itself.
-                if !k.ends_with(want_suffix) {
-                    bail!("Redis holds {k}, not of the format {want_suffix:?}");
+        for pattern in ["app|resources-tree|*", "app|managed-resources|*"] {
+            let mut cursor = b"0".to_vec();
+            let mut checked = false;
+            for _ in 0..50 {
+                let reply = conn
+                    .call(&[
+                        b"SCAN",
+                        &cursor,
+                        b"MATCH",
+                        pattern.as_bytes(),
+                        b"COUNT",
+                        b"1000",
+                    ])
+                    .await?;
+                let Reply::Array(parts) = reply else {
+                    bail!("SCAN: unexpected reply")
+                };
+                let (Some(Reply::Bulk(Some(next))), Some(Reply::Array(keys))) =
+                    (parts.first(), parts.get(1))
+                else {
+                    bail!("SCAN: unexpected reply");
+                };
+                for k in keys {
+                    let Reply::Bulk(Some(k)) = k else { continue };
+                    let k = String::from_utf8_lossy(k);
+                    // A shard (`...|<n>|<version>`) or the tree itself.
+                    if !k.ends_with(want_suffix) {
+                        bail!("Redis holds {k}, not of the format {want_suffix:?}");
+                    }
+                    if !checked
+                        && let Reply::Bulk(Some(v)) = conn.call(&[b"GET", k.as_bytes()]).await?
+                    {
+                        if pattern.starts_with("app|resources-tree|") {
+                            decode(&v, &f).map(|_| ())
+                        } else {
+                            decode_managed(&v, &f).map(|_| ())
+                        }
+                        .with_context(|| format!("{k} cannot be read"))?;
+                        checked = true;
+                    }
                 }
-                if !checked && let Reply::Bulk(Some(v)) = conn.call(&[b"GET", k.as_bytes()]).await?
-                {
-                    decode(&v, &f).with_context(|| format!("{k} cannot be read"))?;
-                    checked = true;
+                cursor = next.clone();
+                if cursor == b"0" {
+                    break;
                 }
-            }
-            cursor = next.clone();
-            if cursor == b"0" {
-                break;
             }
         }
         Ok(f)
@@ -1195,19 +1468,42 @@ impl Ui {
                     );
                     continue;
                 }
+                if let Some(bad) = app
+                    .diffs
+                    .iter()
+                    .find(|d| d.kind.is_empty() || d.name.is_empty())
+                {
+                    warn!(
+                        "argocd-ui: not writing the managed resources of {instance}: {} has no kind or name",
+                        bad.full_name()
+                    );
+                    continue;
+                }
                 let json = serde_json::to_vec(&tree)?;
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 json.hash(&mut h);
+                serde_json::to_vec(&app.diffs)?.hash(&mut h);
                 let hash = h.finish();
                 if app.written.is_some_and(|(w, _)| w == hash) && !expiring {
                     continue;
                 }
-                writes.push((instance.clone(), hash, encode(&tree, f)?));
+                writes.push((
+                    instance.clone(),
+                    hash,
+                    encode(&tree, f)?,
+                    encode(&app.diffs, f)?,
+                ));
             }
             std::mem::take(&mut st.gone)
         };
         let px = self.ttl.as_millis().to_string();
-        for (instance, hash, value) in writes {
+        for (instance, hash, value, managed) in writes {
+            // The managed resources first: the UI reads them on a tree's
+            // notice.
+            let mkey = managed_key(&instance, f);
+            c.call(&[b"SET", mkey.as_bytes(), &managed, b"PX", px.as_bytes()])
+                .await
+                .with_context(|| format!("SET {mkey}"))?;
             let key = tree_key(&instance, f);
             c.call(&[b"SET", key.as_bytes(), &value, b"PX", px.as_bytes()])
                 .await
@@ -1224,7 +1520,12 @@ impl Ui {
             if self.state.lock().await.apps.contains_key(&instance) {
                 continue;
             }
-            c.call(&[b"DEL", tree_key(&instance, f).as_bytes()]).await?;
+            c.call(&[
+                b"DEL",
+                tree_key(&instance, f).as_bytes(),
+                managed_key(&instance, f).as_bytes(),
+            ])
+            .await?;
         }
         Ok(())
     }
@@ -1537,6 +1838,125 @@ mod tests {
         let mut bad = tree.clone();
         bad.nodes[0].r.kind.clear();
         assert!(incomplete(&bad).is_some());
+    }
+
+    #[test]
+    fn managed_keys() {
+        assert_eq!(
+            managed_key("guestbook", &gz()),
+            "app|managed-resources|guestbook|1.8.3.gz"
+        );
+    }
+
+    #[test]
+    fn secrets_are_masked_as_argo_cd_masks_them() {
+        let mut target = json!({"apiVersion": "v1", "kind": "Secret",
+            "metadata": {"name": "s"},
+            "stringData": {"password": "a"}, "data": {"token": "dA==", "same": "eA=="}});
+        let mut live = json!({"apiVersion": "v1", "kind": "Secret",
+            "metadata": {"name": "s", "annotations": {LAST_APPLIED:
+                r#"{"apiVersion":"v1","kind":"Secret","data":{"password":"Yg==","same":"eA=="}}"#}},
+            "data": {"password": "Yg==", "token": "dA==", "same": "eA=="}});
+        hide_secret_data(&mut target, &mut live);
+        assert!(target.get("stringData").is_none());
+        // Equal values share a mask; a different one gets a longer one.
+        assert_eq!(
+            target["data"],
+            json!({"password": "++++++++", "token": "++++++++", "same": "++++++++"})
+        );
+        assert_eq!(
+            live["data"],
+            json!({"password": "++++++++++++", "token": "++++++++", "same": "++++++++"})
+        );
+        let la: Value = serde_json::from_str(
+            live["metadata"]["annotations"][LAST_APPLIED]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            la["data"],
+            json!({"password": "++++++++++++", "same": "++++++++"})
+        );
+        let text = format!("{target}{live}");
+        assert!(!text.contains("dA==") && !text.contains("Yg==") && !text.contains("eA=="));
+    }
+
+    /// The managed resources Argo CD v3.5.5's controller wrote for the
+    /// compat case argocd_ui_tree (GET app|managed-resources|<app>|1.8.3.gz).
+    #[test]
+    fn decodes_argo_cd_managed_resources() {
+        let data = include_bytes!("testdata/argocd-v3.5.5-managed-resources.json.gz");
+        let items = decode_managed(data, &gz()).unwrap();
+        let names: Vec<String> = items.iter().map(ResourceDiff::full_name).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+        assert!(names.iter().any(|n| n.starts_with("apps/Deployment/")));
+        for r in &items {
+            assert!(!r.kind.is_empty() && !r.name.is_empty() && !r.resource_version.is_empty());
+            let live: Value = serde_json::from_str(&r.live_state).unwrap();
+            let target: Value = serde_json::from_str(&r.target_state).unwrap();
+            assert_eq!(live["kind"], r.kind.as_str());
+            assert_eq!(target["metadata"]["name"], r.name.as_str());
+            // Argo CD's normalized live object: no status, no creationTimestamp
+            // (plus scheme defaults on built-in kinds, which litecd leaves
+            // out); ours is the same where there are no defaults.
+            let normalized: Value = serde_json::from_str(&r.normalized_live_state).unwrap();
+            assert!(normalized.get("status").is_none());
+            assert!(normalized["metadata"].get("creationTimestamp").is_none());
+            if matches!(r.kind.as_str(), "ConfigMap" | "Secret") {
+                assert_eq!(normalized_live(&live), normalized, "{}", r.full_name());
+            }
+            if r.kind == "Secret" {
+                assert_eq!(target["data"]["password"], MASK);
+                assert_eq!(live["data"]["token"], MASK);
+                // Masking what is masked changes nothing.
+                let (mut t, mut l) = (target.clone(), live.clone());
+                hide_secret_data(&mut t, &mut l);
+                assert_eq!((t, l), (target.clone(), live.clone()));
+            }
+        }
+        assert_eq!(
+            decode_managed(&encode(&items, &gz()).unwrap(), &gz()).unwrap(),
+            items
+        );
+    }
+
+    #[test]
+    fn managed_resource_states() {
+        let live = json!({"apiVersion": "v1", "kind": "ConfigMap",
+            "metadata": {"name": "c", "namespace": "n", "resourceVersion": "7", "creationTimestamp": "t"},
+            "data": {"k": "live"}});
+        let target = json!({"apiVersion": "v1", "kind": "ConfigMap",
+            "metadata": {"name": "c", "namespace": "n"}, "data": {"k": "git"}});
+        assert_eq!(
+            overlay(&normalized_live(&live), &target),
+            json!({"apiVersion": "v1", "kind": "ConfigMap",
+                "metadata": {"name": "c", "namespace": "n", "resourceVersion": "7"}, "data": {"k": "git"}})
+        );
+        let r = ResourceDiff {
+            kind: "ConfigMap".into(),
+            name: "c".into(),
+            target_state: "null".into(),
+            modified: true,
+            ..Default::default()
+        };
+        let v: Value = serde_json::from_slice(
+            &encode(
+                &vec![r],
+                &Format {
+                    cache_version: "x".into(),
+                    gzip: false,
+                },
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            v,
+            json!([{"kind": "ConfigMap", "name": "c", "targetState": "null", "modified": true}])
+        );
     }
 
     /// A tree Argo CD v3.5.5's application controller wrote to Redis (the
