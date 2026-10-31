@@ -1,50 +1,108 @@
+<p align="center"><img src="docs/brand/litecd.svg" width="112" alt="litecd logo"></p>
+
 # litecd
 
-GitOps continuous delivery in one small Rust binary that reads Argo CD's
-`Application`, `AppProject` and `ApplicationSet` manifests unchanged. Built
-for small clusters (home labs, edge, [litek8s](https://github.com/jairoFernandez/litek8s)),
-where Argo CD's seven pods use more memory than the orchestrator itself.
+**GitOps for small clusters: your Argo CD Applications, synced by one Rust process instead of seven.**
 
-**Status: phases 1 to 3 done; phase 4 (UX) next.** The
-controller syncs Applications and
-AppProjects from git directories, Helm charts (in git or a Helm repository)
-and Kustomize, single or multiple sources (`$ref` value files), with
-automated sync, prune, self-heal, sync waves, hooks (PreSync, Sync,
-PostSync, SyncFail, Helm's install/upgrade hooks, delete policies),
-`ignoreDifferences` (JSON pointers, jq paths, field managers; from the app
-and argocd-cm), Kustomize options, jsonnet, shared-resource detection
-(FailOnSharedResource), retries, the usual sync options
-(PruneLast and ApplyOutOfSyncOnly among them), built-in health checks, Argo
-CD's own Lua library of them and Lua ones from argocd-cm, and the
-app-of-apps pattern, and writes the same `.status` Argo CD does. Its
-ApplicationSet controller has the list, clusters, git (directories and
-files), matrix and merge generators, fasttemplate and goTemplate; and
-destinations in other clusters come from Argo CD's cluster Secrets.
-Applications can live outside Argo CD's namespace
-(`application.namespaces`, the project's `sourceNamespaces`), and projects'
-sync windows hold automated and manual syncs as Argo CD's do. It
-passes all 38 cases of the compatibility corpus
-([compat/](compat/)), whose expected results come from Argo CD v3.5.5. The plan is in [docs/spec.md](docs/spec.md).
+On a 2 GiB machine with one synced app, the whole Kubernetes control plane
+takes 90 MiB and Argo CD's seven pods take 359. GitOps costs four times what
+Kubernetes does. litecd is the fix for home labs, edge boxes and small
+clusters ([litek8s](https://github.com/jairoFernandez/litek8s), k3s, kind):
+it reads Argo CD's `Application`, `AppProject` and `ApplicationSet`
+manifests unchanged and writes the same `.status`. Your GitOps repo, your
+`kubectl get applications` and your webhooks keep working, and Argo CD's
+web UI can stay.
 
-On litek8s the controller process takes 8–9 MiB of RSS through the whole
-corpus and next to no CPU idle; Argo CD's pods take 359 MiB idle on the same
-kind of cluster. litek8s's GitOps platform example (12 Applications in
-waves, Helm charts, Kustomize, an app of apps that manages itself, Gitea
-webhooks, CI, Atlantis) comes up with litecd in Argo CD's place and passes
-its whole smoke test, at 28 MiB against Argo CD's 723 MiB:
-`e2e/platform.sh` (a patch on a copy of litek8s's `examples/platform`;
-litek8s itself does not know litecd).
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideascoldigital/litecd/main/install.sh | sh
+```
 
-Side by side on one litek8s cluster with 20 Applications
-([bench/RESULTS.md](bench/RESULTS.md)): 6.9 MiB of working set against
-Argo CD's 310 MiB (4.1 against 225 MiB anonymous), 19 apps at once
-synced in 3.3 s against 5.7 s, single syncs and heals as fast.
+How it went on a production cluster, including what did not go to plan:
+[Replacing Argo CD's controller with litecd: 666 MiB to 100, and what it cost](https://litek8s.dev/blog/replacing-argo-cd-with-litecd/)
+([en español](https://litek8s.dev/es/blog/reemplazar-argo-cd-con-litecd/)).
+Docs: [GitOps with litecd](https://litek8s.dev/docs/litecd/).
 
-Pushes: litecd answers `/api/webhook` (GitHub, Gitea, Gogs, GitLab) behind
-a Service named `argocd-server`, so webhooks made for Argo CD keep working.
-Signatures are checked as Argo CD checks them, against `argocd-secret`'s
-`webhook.github.secret`, `webhook.gogs.secret` (Gitea and Gogs) and
-`webhook.gitlab.secret`; a provider without a secret takes any push.
+## The numbers
+
+| | Argo CD | litecd |
+|---|---:|---:|
+| Memory, idle (all Argo CD pods vs litecd) | 359 MiB | **8–9 MiB** |
+| 20 Applications, working set ([bench](bench/RESULTS.md)) | 310 MiB | **6.9 MiB** |
+| Install → ready | 28.7 s | **0.6 s** |
+| 19 apps synced at once | 5.7 s | **3.3 s** |
+| litek8s GitOps platform (12 apps, Helm, Kustomize, app of apps, CI) | 723 MiB | **28 MiB** |
+| Production k3s, 59 apps, ~690 resources: application controller | 666 MiB | **~100 MiB** |
+| Same cluster, Argo CD's namespace (UI kept) | 1,322 MiB | **594 MiB** |
+
+Why the gap: Argo CD's controller watches every resource type the cluster
+serves and keeps it all in memory, across seven processes with their own
+caches. litecd watches only the types your apps use, drops objects it does
+not track, and runs as one process. It shells out to git, helm and
+kustomize as Argo CD's repo server does, so renders come out the same.
+
+Single syncs and self-heals are as fast as Argo CD's. The platform run is
+reproducible with `e2e/platform.sh` (a patch on a copy of litek8s's
+`examples/platform`, whose whole smoke test passes with litecd in Argo CD's
+place).
+
+## Why litecd
+
+- **Drop-in.** Same CRDs, same tracking ids, same field manager, same
+  `.status`. Nothing in your GitOps repo changes, and going back to Argo CD
+  is the same steps in reverse.
+- **Safe to try.** `litecd check` tells you up front whether your manifests
+  are supported. `--observe` runs beside Argo CD and logs where it would
+  disagree, writing nothing. Installed next to Argo CD, litecd stands down
+  until you scale Argo CD's controller to 0.
+- **Proven against the real thing.** All 38 cases of the
+  [compatibility corpus](compat/) pass, with expected results taken from
+  Argo CD v3.5.5 itself. On a production k3s cluster, observe mode agreed
+  with Argo CD on 58 of 59 apps before the switch, and deploys kept rolling
+  after it.
+- **One process.** No repo server, no Redis, no Dex, no API server to run.
+
+## What you give up
+
+- **No web UI of its own yet.** Argo CD's UI keeps working for lists, sync
+  and health, but its resource tree, resource details and Diff tab stay
+  empty without Argo CD's controller
+  ([a deprecated mode](#deprecated-compatibility-argo-cds-web-ui) fills
+  them). `litek8s ui` shows apps, resources and diffs from any
+  cluster.
+- **No SSO, notifications or `argocd` CLI** in litecd itself; keep Argo
+  CD's for those, or go without.
+- **Memory grows with what it renders.** 7 MiB in the lab, ~100 MiB with 59
+  apps and Helm umbrellas in production, then flat. Six times less than the
+  controller it replaced, not fifty.
+- **Charts with random values** (`randAlphaNum` in a Secret) sync once per
+  restart: Argo CD hides them with its manifest cache.
+
+## What it does
+
+- **Sources:** git directories, Helm charts (git or Helm repository),
+  Kustomize (with its options), jsonnet; single or multiple sources with
+  `$ref` value files; app of apps.
+- **Sync:** automated sync, prune, self-heal, retries, sync waves, hooks
+  (PreSync, Sync, PostSync, SyncFail, Helm install/upgrade hooks, delete
+  policies), PruneLast, ApplyOutOfSyncOnly, Replace, server-side apply,
+  shared-resource detection (FailOnSharedResource).
+- **Diff:** `ignoreDifferences` (JSON pointers, jq paths, field managers;
+  per app and from argocd-cm).
+- **Health:** built-in checks, Argo CD's own Lua library, custom Lua from
+  argocd-cm.
+- **ApplicationSets:** list, clusters, git (directories and files), matrix
+  and merge generators; fasttemplate and goTemplate.
+- **Multi-cluster and multi-tenant:** destinations from Argo CD's cluster
+  Secrets, Applications outside Argo CD's namespace
+  (`application.namespaces`, `sourceNamespaces`), AppProject sync windows.
+- **Webhooks:** `/api/webhook` for GitHub, Gitea, Gogs and GitLab behind a
+  Service named `argocd-server`, so hooks made for Argo CD keep working.
+  Signatures are checked as Argo CD checks them, against `argocd-secret`'s
+  `webhook.github.secret`, `webhook.gogs.secret` (Gitea and Gogs) and
+  `webhook.gitlab.secret`; a provider without a secret takes any push.
+
+**Status:** phases 1 to 3 done; phase 4 (UX, litecd's own UI) next. Plan
+and scope: [docs/spec.md](docs/spec.md).
 
 ## Install
 
@@ -173,8 +231,9 @@ else in litecd depends on it.
 Some clusters keep Argo CD's web UI (argocd-server, its repo server and
 Redis) running with litecd in place of Argo CD's application controller.
 Lists, sync and health work there as they are, but the UI's resource tree
-(Deployments, ReplicaSets, Pods) stays empty: argocd-server reads it from a
-Redis cache only Argo CD's controller fills. A compatibility mode fills it:
+(Deployments, ReplicaSets, Pods), a resource's details and the Diff tab stay
+empty: argocd-server reads them from a Redis cache only Argo CD's controller
+fills. A compatibility mode fills it, Secrets masked as Argo CD masks them:
 
 ```bash
 # image ghcr.io/<owner>/litecd:vX.Y.Z-argocd-ui, or:
@@ -190,8 +249,8 @@ off unless `--argocd-ui-cache` (`LITECD_ARGOCD_UI_CACHE`) is set, it logs a
 warning when it starts, it is coupled to Argo CD's internal cache format
 (it writes nothing when it cannot tell that format is the one it knows),
 and it will be removed once litecd has its own UI, with an app's resources
-computed on demand from the Kubernetes API. Argo CD's Diff tab stays empty
-even with it (it reads another cache of Argo CD's controller). Purpose, coupling, cost and
+computed on demand from the Kubernetes API. The Diff tab may show fields
+Argo CD would hide as scheme defaults. Purpose, coupling, cost and
 removal: [docs/spec.md, Deprecated compatibility](docs/spec.md#deprecated-compatibility).
 
 ## Check your manifests
